@@ -24,10 +24,19 @@ El usuario admin se crea desde el dashboard de Supabase → Authentication → U
 cartas repetidas del mismo jugador. Las compras se guardan en la tabla `team_purchases`
 de Supabase (una fila por jugador comprado, con el valor pagado).
 
-## Base de pruebas
+## Sitios y bases de datos
 
-La app usa la base real (`torneofifa`) solo en torneofifa.com, www.torneofifa.com y
-torneofifateam.netlify.app. En cualquier otra dirección (GitHub Pages, copias locales) usa
-la base de pruebas `torneofifa-pruebas` y muestra una franja "MODO PRUEBAS". Ambas bases
+| Sitio | Repo | Base de datos |
+|---|---|---|
+| **https://torneofifa.com** (producción) | `vickrdzdev/torneofifa` → GitHub Pages con dominio propio | `torneofifa` (real) |
+| **https://vickrdzdev.github.io/torneofifa-pruebas/** (pruebas) | `vickrdzdev/torneofifa-pruebas` → GitHub Pages | `torneofifa-pruebas` |
+
+La app elige la base por dominio: solo torneofifa.com / www.torneofifa.com usan la base real;
+cualquier otra dirección usa la de pruebas y muestra la franja "MODO PRUEBAS". Ambas bases
 tienen la misma estructura; los usuarios admin se dan de alta por separado en cada una.
 
+Flujo de cambios: primero se suben a `torneofifa-pruebas` para revisarlos y, al aprobarlos, a
+`torneofifa` (producción). El archivo `CNAME` solo existe en el repo de producción.
+
+El DNS de torneofifa.com está en Namecheap (BasicDNS): 4 registros A de GitHub Pages
+(185.199.108-111.153) y `www` CNAME a `vickrdzdev.github.io`.

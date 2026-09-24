@@ -440,9 +440,9 @@
   "use strict";
 
   /* ============================== supabase config ============================== */
-  // Base real solo en los dominios de producción; en cualquier otro lugar
-  // (GitHub Pages, copias locales) se usa la base de pruebas.
-  const PROD_HOSTS = ["torneofifa.com", "www.torneofifa.com", "torneofifateam.netlify.app"];
+  // Base real solo en torneofifa.com; en cualquier otro lugar (el sitio de
+  // pruebas vickrdzdev.github.io/torneofifa-pruebas, copias locales) se usa la base de pruebas.
+  const PROD_HOSTS = ["torneofifa.com", "www.torneofifa.com"];
   const IS_TEST_ENV = !PROD_HOSTS.includes(location.hostname);
   const SUPABASE_URL = IS_TEST_ENV
     ? "https://bcvzgwnwjtcmtbhwruhi.supabase.co"      // torneofifa-pruebas
