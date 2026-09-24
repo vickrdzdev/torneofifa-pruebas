@@ -338,6 +338,44 @@
   .draft-tag.open { background: var(--blue); color: #fff; }
   .draft-tag.closed { background: var(--red); color: #fff; }
   .pass-btn { margin-left: auto; padding: 6px 12px; font-size: 13px; }
+  /* ---------- estadísticas ---------- */
+  .st-filter { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; margin-bottom: 16px; }
+  .st-filter button { background: transparent; border: none; color: var(--text-muted); font-weight: 600; font-size: 13.5px; padding: 6px 14px; border-radius: 999px; }
+  .st-filter button.active { background: var(--accent); color: var(--accent-ink); }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  @media (max-width: 600px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .kpi { padding: 12px; }
+    .kpi .who { font-size: 18px; }
+    .kpi .val { font-size: 12px; }
+  }
+  table.stats-table .pl-name, table.stats-table th.pl-head { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  table.stats-table th.pl-head { background: var(--surface-2); }
+  .kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .kpi .lbl { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+  .kpi .who { font-family: var(--font-display); font-size: 22px; font-weight: 700; line-height: 1.15; }
+  .kpi .val { font-size: 13px; color: var(--text-muted); }
+  .kpi .val strong { color: var(--text); font-variant-numeric: tabular-nums; }
+  table.stats-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  table.stats-table th.sortable:hover { color: var(--text); }
+  table.stats-table th.sorted { color: var(--accent); }
+  table.stats-table td { font-variant-numeric: tabular-nums; }
+  .wdl-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-2); min-width: 90px; gap: 1px; }
+  .wdl-bar span { display: block; height: 100%; }
+  .wdl-bar .w { background: var(--accent); } .wdl-bar .d { background: var(--text-muted); } .wdl-bar .l { background: var(--red); }
+  .wdl-txt { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; white-space: nowrap; }
+  .st-foot { font-size: 12.5px; color: var(--text-muted); margin: 10px 0 0; line-height: 1.5; }
+  table.h2h { border-collapse: separate; border-spacing: 4px; }
+  table.h2h th { font-size: 12.5px; color: var(--text-muted); font-weight: 700; padding: 4px 6px; white-space: nowrap; }
+  table.h2h th.row-h { text-align: left; color: var(--text); font-size: 14px; position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  table.h2h td { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; text-align: center; padding: 7px 8px; min-width: 74px; font-variant-numeric: tabular-nums; }
+  table.h2h td .rec { font-weight: 700; font-size: 14px; }
+  table.h2h td .gl { font-size: 11.5px; color: var(--text-muted); }
+  table.h2h td.self { background: transparent; border-style: dashed; color: var(--text-muted); }
+  table.h2h td.none { color: var(--text-muted); }
+  table.h2h td.pos { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+  table.h2h td.neg { background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
+
   /* ---------- alineaciones ---------- */
   .lu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
   .lu-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -523,6 +561,9 @@
   let luDrafts = {};          // cambios sin guardar por "jornadaId:playerId"
   let luSaving = null;
   let accDrafts = {};
+  let statsTab = "resumen";   // "resumen" | "h2h"
+  let statsFilter = "all";    // "all" | "group" | "ko"
+  let statsSort = { key: "w", desc: true };
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
   // Módulos: "torneo" | "equipos" | "mercado"
@@ -1987,7 +2028,8 @@
     { id: "equipos", icon: "👕", label: "Equipos" },
     { id: "mercado", icon: "🛒", label: "Mercado" },
     { id: "transacciones", icon: "🧾", label: "Transacciones" },
-    { id: "alineaciones", icon: "📋", label: "Alineaciones" }
+    { id: "alineaciones", icon: "📋", label: "Alineaciones" },
+    { id: "estadisticas", icon: "📊", label: "Estadísticas" }
   ];
   function renderDashboard() {
     const app = $("#app");
@@ -1998,6 +2040,8 @@
       body = renderMarketModule(); wide = true;
     } else if (activeModule === "transacciones") {
       body = renderTransactionsModule();
+    } else if (activeModule === "estadisticas") {
+      ({ tabs: topTabs, body } = renderStatsModule());
     } else if (activeModule === "alineaciones") {
       ({ tabs: topTabs, body } = renderLineupsModule());
     } else {
@@ -2032,6 +2076,157 @@
       ${buyModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
+  }
+
+  /* ============================== estadísticas ============================== */
+  // Partidos jugados de la temporada según el filtro: "group" (fase de grupos),
+  // "ko" (Liguilla: repechaje, semifinales y final) o "all".
+  function statMatches(filter) {
+    const out = [];
+    state.jornadas.forEach(j => {
+      if (filter !== "ko") (j.matches || []).forEach(m => out.push(m));
+      if (filter !== "group" && j.playoff) {
+        (j.playoff.repechaje || []).concat(j.playoff.semis || [], j.playoff.final ? [j.playoff.final] : []).forEach(m => out.push(m));
+      }
+    });
+    return out.filter(m => m && m.played && m.homeGoals != null && m.awayGoals != null && m.homeId && m.awayId);
+  }
+  // Leagues Cup (penales tras empate en fase de grupos) y títulos no dependen del filtro.
+  function computeStats(filter) {
+    const st = {};
+    state.players.forEach(p => st[p.id] = { id: p.id, name: p.name, pj: 0, w: 0, d: 0, l: 0, gf: 0, gc: 0, lc: 0, champ: 0, sub: 0 });
+    statMatches(filter).forEach(m => {
+      [[m.homeId, m.homeGoals, m.awayGoals], [m.awayId, m.awayGoals, m.homeGoals]].forEach(([id, f, a]) => {
+        const s = st[id]; if (!s) return;
+        s.pj++; s.gf += f; s.gc += a;
+        if (f > a) s.w++; else if (f < a) s.l++; else s.d++;
+      });
+    });
+    statMatches("group").forEach(m => {
+      if (m.homeGoals === m.awayGoals && m.shootoutWinnerId && st[m.shootoutWinnerId]) st[m.shootoutWinnerId].lc++;
+    });
+    state.jornadas.forEach(j => {
+      const f = j.playoff && j.playoff.final;
+      const champ = f && getWinner(f);
+      if (!champ) return;
+      const sub = champ === f.homeId ? f.awayId : f.homeId;
+      if (st[champ]) st[champ].champ++;
+      if (st[sub]) st[sub].sub++;
+    });
+    return Object.values(st).map(s => Object.assign(s, {
+      pw: s.pj ? s.w / s.pj : 0, pd: s.pj ? s.d / s.pj : 0, pl: s.pj ? s.l / s.pj : 0,
+      gfp: s.pj ? s.gf / s.pj : 0, gcp: s.pj ? s.gc / s.pj : 0
+    }));
+  }
+  const pct = x => Math.round(x * 100) + "%";
+  const avg2 = x => x.toFixed(2);
+  // Mejor valor de una lista (empates: todos los nombres).
+  function kpiLeader(list, val, lowerIsBetter) {
+    if (!list.length) return null;
+    const best = list.reduce((b, s) => (lowerIsBetter ? val(s) < b : val(s) > b) ? val(s) : b, val(list[0]));
+    return { names: list.filter(s => val(s) === best).map(s => s.name), best };
+  }
+  function kpiCard(icon, label, leader, fmt) {
+    const empty = !leader || leader.best === 0 && fmt.zeroEmpty;
+    return `<div class="card kpi">
+        <span class="lbl">${icon} ${label}</span>
+        <span class="who">${empty ? "—" : leader.names.map(escapeHtml).join(" · ")}</span>
+        <span class="val">${empty ? "Sin datos todavía" : fmt(leader.best)}</span>
+      </div>`;
+  }
+  const STAT_COLS = [
+    { key: "pj", label: "PJ", title: "Partidos jugados" },
+    { key: "w", label: "G", title: "Ganados" },
+    { key: "d", label: "E", title: "Empatados" },
+    { key: "l", label: "P", title: "Perdidos" },
+    { key: "gf", label: "GF", title: "Goles a favor" },
+    { key: "gc", label: "GC", title: "Goles en contra", asc: true },
+    { key: "pw", label: "%G · %E · %P", title: "Porcentaje de ganados, empatados y perdidos" },
+    { key: "lc", label: "Leagues Cup", title: "Desempates de penales ganados en fase de grupos" },
+    { key: "champ", label: "🏆", title: "Campeonatos de Jornada" },
+    { key: "sub", label: "🥈", title: "Subcampeonatos de Jornada" }
+  ];
+  function renderStatsModule() {
+    const tabs = [["resumen", "Resumen"], ["h2h", "Cara a cara"]]
+      .map(([id, l]) => `<button class="tab-btn ${statsTab === id ? "active" : ""}" data-action="set-stats-tab" data-tab="${id}">${l}</button>`).join("");
+    const filter = `<div class="st-filter">${[["all", "Todos"], ["group", "Fase de grupos"], ["ko", "Liguilla"]]
+      .map(([id, l]) => `<button class="${statsFilter === id ? "active" : ""}" data-action="set-stats-filter" data-f="${id}">${l}</button>`).join("")}</div>`;
+    const stats = computeStats(statsFilter);
+    const body = statsTab === "h2h" ? renderHeadToHead(filter) : renderStatsSummary(filter, stats);
+    return { tabs, body };
+  }
+  function renderStatsSummary(filter, stats) {
+    const maxPj = Math.max(0, ...stats.map(s => s.pj));
+    const minPj = Math.ceil(maxPj / 2);
+    const eligible = stats.filter(s => s.pj > 0 && s.pj >= minPj);
+    const fmtN = (one, many) => { const f = v => `<strong>${v}</strong> ${v === 1 ? one : many}`; f.zeroEmpty = true; return f; };
+    const kpis = `<div class="kpi-grid">
+        ${kpiCard("🏅", "Más partidos ganados", kpiLeader(stats, s => s.w), fmtN("ganado", "ganados"))}
+        ${kpiCard("⚽", "Mejor ofensiva", kpiLeader(eligible, s => s.gfp), v => `<strong>${avg2(v)}</strong> goles a favor por partido`)}
+        ${kpiCard("🧱", "Mejor defensiva", kpiLeader(eligible, s => s.gcp, true), v => `<strong>${avg2(v)}</strong> goles en contra por partido`)}
+        ${kpiCard("📈", "Mejor % de victorias", kpiLeader(eligible, s => s.pw), v => `<strong>${pct(v)}</strong> de partidos ganados`)}
+        ${kpiCard("🏆", "Más campeonatos", kpiLeader(stats, s => s.champ), fmtN("título", "títulos"))}
+        ${kpiCard("🎯", "Más Leagues Cup", kpiLeader(stats, s => s.lc), fmtN("ganada", "ganadas"))}
+      </div>`;
+    const col = STAT_COLS.find(c => c.key === statsSort.key) || STAT_COLS[1];
+    const dir = statsSort.desc ? -1 : 1;
+    const rows = stats.slice().sort((a, b) => dir * (a[col.key] - b[col.key]) || (b.w - a.w) || (b.gf - b.gc - (a.gf - a.gc)) || a.name.localeCompare(b.name));
+    const cell = (s, c) => {
+      if (c.key === "pw") return `<td style="text-align:left">${s.pj ? `<div class="wdl-bar"><span class="w" style="width:${s.pw * 100}%"></span><span class="d" style="width:${s.pd * 100}%"></span><span class="l" style="width:${s.pl * 100}%"></span></div><div class="wdl-txt">${pct(s.pw)} · ${pct(s.pd)} · ${pct(s.pl)}</div>` : `<span class="muted">–</span>`}</td>`;
+      return `<td>${s[c.key]}</td>`;
+    };
+    const table = `
+      <div class="table-scroll">
+        <table class="standings stats-table">
+          <thead><tr><th class="pl-head" style="text-align:left">Player</th>
+            ${STAT_COLS.map(c => `<th class="sortable ${statsSort.key === c.key ? "sorted" : ""}" title="${c.title} · ordenar" data-action="sort-stats" data-key="${c.key}">${c.label}${statsSort.key === c.key ? (statsSort.desc ? " ▾" : " ▴") : ""}</th>`).join("")}
+          </tr></thead>
+          <tbody>${rows.map(s => `<tr><td class="pl-name" style="text-align:left; font-weight:700;">${escapeHtml(s.name)}</td>${STAT_COLS.map(c => cell(s, c)).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>`;
+    return `
+      <div class="section">
+        <div class="section-head"><h2>Estadísticas de la temporada</h2></div>
+        ${filter}
+        ${kpis}
+        ${table}
+        <p class="st-foot">
+          Los partidos que se definen en penales cuentan como empate en G-E-P; el ganador de la tanda solo se refleja en la Leagues Cup (fase de grupos) o en su avance en la Liguilla.
+          Ofensiva, defensiva y % de victorias se calculan por partido entre quienes han jugado al menos la mitad de los partidos del que más lleva${maxPj ? ` (mínimo ${minPj})` : ""}.
+          Leagues Cup, 🏆 y 🥈 no cambian con el filtro. Toca un encabezado para ordenar.
+        </p>
+      </div>`;
+  }
+  function renderHeadToHead(filter) {
+    const rec = {};
+    const key = (a, b) => a + "|" + b;
+    statMatches(statsFilter).forEach(m => {
+      [[m.homeId, m.awayId, m.homeGoals, m.awayGoals], [m.awayId, m.homeId, m.awayGoals, m.homeGoals]].forEach(([a, b, f, g]) => {
+        const r = rec[key(a, b)] = rec[key(a, b)] || { w: 0, d: 0, l: 0, gf: 0, gc: 0 };
+        r.gf += f; r.gc += g;
+        if (f > g) r.w++; else if (f < g) r.l++; else r.d++;
+      });
+    });
+    const ps = state.players;
+    const cellHtml = (a, b) => {
+      if (a === b) return `<td class="self">—</td>`;
+      const r = rec[key(a, b)];
+      if (!r) return `<td class="none">Sin partidos</td>`;
+      const cls = r.w > r.l ? "pos" : r.w < r.l ? "neg" : "";
+      return `<td class="${cls}" title="${escapeHtml(playerName(a))} vs ${escapeHtml(playerName(b))}: ${r.w} G, ${r.d} E, ${r.l} P · goles ${r.gf}-${r.gc}"><div class="rec">${r.w}-${r.d}-${r.l}</div><div class="gl">${r.gf}:${r.gc}</div></td>`;
+    };
+    return `
+      <div class="section">
+        <div class="section-head"><h2>Cara a cara</h2></div>
+        ${filter}
+        <div class="table-scroll">
+          <table class="h2h">
+            <thead><tr><th></th>${ps.map(p => `<th>vs ${escapeHtml(p.name)}</th>`).join("")}</tr></thead>
+            <tbody>${ps.map(a => `<tr><th class="row-h">${escapeHtml(a.name)}</th>${ps.map(b => cellHtml(a.id, b.id)).join("")}</tr>`).join("")}</tbody>
+          </table>
+        </div>
+        <p class="st-foot">Cada fila es el récord de ese player contra el rival de la columna: <strong>G-E-P</strong> y goles a favor:en contra. Verde = le ha ganado más veces de las que ha perdido; rojo = al revés. Los partidos definidos en penales cuentan como empate.</p>
+      </div>`;
   }
 
   /* ============================== alineaciones ============================== */
@@ -2778,6 +2973,14 @@
       case "close-login": loginOpen = false; loginError = ""; render(); break;
       case "submit-login": submitLogin(); break;
       case "admin-logout": adminLogout(); break;
+      case "set-stats-tab": statsTab = el.dataset.tab; render(); break;
+      case "set-stats-filter": statsFilter = el.dataset.f; render(); break;
+      case "sort-stats": {
+        const k = el.dataset.key;
+        const c = STAT_COLS.find(x => x.key === k);
+        statsSort = statsSort.key === k ? { key: k, desc: !statsSort.desc } : { key: k, desc: !(c && c.asc) };
+        render(); break;
+      }
       case "set-lu-tab": luTab = el.dataset.tab; render(); break;
       case "save-lineup": saveLineup(el.dataset.j, el.dataset.p); break;
       case "copy-lu-code": copyLineupCode(el.dataset.code); break;
