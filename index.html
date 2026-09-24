@@ -356,10 +356,8 @@
   .kpi .who { font-family: var(--font-display); font-size: 22px; font-weight: 700; line-height: 1.15; }
   .kpi .val { font-size: 13px; color: var(--text-muted); }
   .kpi .val strong { color: var(--text); font-variant-numeric: tabular-nums; }
-  table.stats-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-  table.stats-table th.sortable:hover { color: var(--text); }
-  table.stats-table th.sorted { color: var(--accent); }
   table.stats-table td { font-variant-numeric: tabular-nums; }
+  table.stats-table th { white-space: nowrap; }
   .wdl-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--surface-2); min-width: 90px; gap: 1px; }
   .wdl-bar span { display: block; height: 100%; }
   .wdl-bar .w { background: var(--accent); } .wdl-bar .d { background: var(--text-muted); } .wdl-bar .l { background: var(--red); }
@@ -561,9 +559,8 @@
   let luDrafts = {};          // cambios sin guardar por "jornadaId:playerId"
   let luSaving = null;
   let accDrafts = {};
-  let statsTab = "resumen";   // "resumen" | "h2h"
+  let statsTab = "general";   // "general" | "resumen" | "h2h"
   let statsFilter = "all";    // "all" | "group" | "ko"
-  let statsSort = { key: "w", desc: true };
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
   // Módulos: "torneo" | "equipos" | "mercado"
@@ -2140,17 +2137,19 @@
     { key: "d", label: "E", title: "Empatados" },
     { key: "l", label: "P", title: "Perdidos" },
     { key: "gf", label: "GF", title: "Goles a favor" },
-    { key: "gc", label: "GC", title: "Goles en contra", asc: true },
+    { key: "gc", label: "GC", title: "Goles en contra" },
     { key: "pw", label: "%G · %E · %P", title: "Porcentaje de ganados, empatados y perdidos" },
     { key: "lc", label: "Leagues Cup", title: "Desempates de penales ganados en fase de grupos" },
     { key: "champ", label: "🏆", title: "Campeonatos de Jornada" },
     { key: "sub", label: "🥈", title: "Subcampeonatos de Jornada" }
   ];
   function renderStatsModule() {
-    const tabs = [["resumen", "Resumen"], ["h2h", "Cara a cara"]]
+    const tabs = [["general", "Tabla General"], ["resumen", "Resumen"], ["h2h", "Cara a cara"]]
       .map(([id, l]) => `<button class="tab-btn ${statsTab === id ? "active" : ""}" data-action="set-stats-tab" data-tab="${id}">${l}</button>`).join("");
     const filter = `<div class="st-filter">${[["all", "Todos"], ["group", "Fase de grupos"], ["ko", "Liguilla"]]
       .map(([id, l]) => `<button class="${statsFilter === id ? "active" : ""}" data-action="set-stats-filter" data-f="${id}">${l}</button>`).join("")}</div>`;
+    // La Tabla General es la misma que la pestaña de Torneo.
+    if (statsTab === "general") return { tabs, body: renderGeneralTable() };
     const stats = computeStats(statsFilter);
     const body = statsTab === "h2h" ? renderHeadToHead(filter) : renderStatsSummary(filter, stats);
     return { tabs, body };
@@ -2170,9 +2169,8 @@
       </div>`;
     // La Leagues Cup solo existe en fase de grupos: no aplica al filtrar la Liguilla.
     const cols = STAT_COLS.filter(c => !(c.key === "lc" && statsFilter === "ko"));
-    const col = cols.find(c => c.key === statsSort.key) || STAT_COLS[1];
-    const dir = statsSort.desc ? -1 : 1;
-    const rows = stats.slice().sort((a, b) => dir * (a[col.key] - b[col.key]) || (b.w - a.w) || (b.gf - b.gc - (a.gf - a.gc)) || a.name.localeCompare(b.name));
+    // Orden fijo: más partidos ganados; en empate, más goles a favor.
+    const rows = stats.slice().sort((a, b) => (b.w - a.w) || (b.gf - a.gf) || a.name.localeCompare(b.name));
     const cell = (s, c) => {
       if (c.key === "pw") return `<td style="text-align:left">${s.pj ? `<div class="wdl-bar"><span class="w" style="width:${s.pw * 100}%"></span><span class="d" style="width:${s.pd * 100}%"></span><span class="l" style="width:${s.pl * 100}%"></span></div><div class="wdl-txt">${pct(s.pw)} · ${pct(s.pd)} · ${pct(s.pl)}</div>` : `<span class="muted">–</span>`}</td>`;
       return `<td>${s[c.key]}</td>`;
@@ -2181,7 +2179,7 @@
       <div class="table-scroll">
         <table class="standings stats-table">
           <thead><tr><th class="pl-head" style="text-align:left">Player</th>
-            ${cols.map(c => `<th class="sortable ${statsSort.key === c.key ? "sorted" : ""}" title="${c.title} · ordenar" data-action="sort-stats" data-key="${c.key}">${c.label}${statsSort.key === c.key ? (statsSort.desc ? " ▾" : " ▴") : ""}</th>`).join("")}
+            ${cols.map(c => `<th title="${c.title}">${c.label}</th>`).join("")}
           </tr></thead>
           <tbody>${rows.map(s => `<tr><td class="pl-name" style="text-align:left; font-weight:700;">${escapeHtml(s.name)}</td>${cols.map(c => cell(s, c)).join("")}</tr>`).join("")}</tbody>
         </table>
@@ -2195,7 +2193,7 @@
         <p class="st-foot">
           Los partidos que se definen en penales cuentan como empate en G-E-P; el ganador de la tanda solo se refleja en la Leagues Cup (fase de grupos) o en su avance en la Liguilla.
           Ofensiva, defensiva y % de victorias se calculan por partido entre quienes han jugado al menos la mitad de los partidos del que más lleva${maxPj ? ` (mínimo ${minPj})` : ""}.
-          ${statsFilter === "ko" ? "🏆 y 🥈 no cambian con el filtro; la Leagues Cup no se muestra porque solo se juega en fase de grupos." : "Leagues Cup, 🏆 y 🥈 no cambian con el filtro."} Toca un encabezado para ordenar.
+          ${statsFilter === "ko" ? "🏆 y 🥈 no cambian con el filtro; la Leagues Cup no se muestra porque solo se juega en fase de grupos." : "Leagues Cup, 🏆 y 🥈 no cambian con el filtro."} La tabla se ordena por partidos ganados y, en empate, por goles a favor.
         </p>
       </div>`;
   }
@@ -2980,12 +2978,6 @@
       case "admin-logout": adminLogout(); break;
       case "set-stats-tab": statsTab = el.dataset.tab; render(); break;
       case "set-stats-filter": statsFilter = el.dataset.f; render(); break;
-      case "sort-stats": {
-        const k = el.dataset.key;
-        const c = STAT_COLS.find(x => x.key === k);
-        statsSort = statsSort.key === k ? { key: k, desc: !statsSort.desc } : { key: k, desc: !(c && c.asc) };
-        render(); break;
-      }
       case "set-lu-tab": luTab = el.dataset.tab; render(); break;
       case "save-lineup": saveLineup(el.dataset.j, el.dataset.p); break;
       case "copy-lu-code": copyLineupCode(el.dataset.code); break;
