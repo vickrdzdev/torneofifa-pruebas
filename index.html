@@ -559,7 +559,7 @@
   let luDrafts = {};          // cambios sin guardar por "jornadaId:playerId"
   let luSaving = null;
   let accDrafts = {};
-  let statsTab = "general";   // "general" | "recompensas" | "palmares" | "resumen" | "h2h"
+  let statsTab = "general";   // "general" | "resumen" | "h2h" | "recompensas" | "palmares"
   let statsFilter = "all";    // "all" | "group" | "ko"
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
@@ -2144,7 +2144,7 @@
     { key: "sub", label: "🥈", title: "Subcampeonatos de Jornada" }
   ];
   function renderStatsModule() {
-    const tabs = [["general", "Tabla General"], ["recompensas", "Recompensas"], ["palmares", "Palmarés"], ["resumen", "Resumen"], ["h2h", "Cara a cara"]]
+    const tabs = [["general", "Tabla General"], ["resumen", "Resumen"], ["h2h", "Cara a cara"], ["recompensas", "Recompensas"], ["palmares", "Palmarés"]]
       .map(([id, l]) => `<button class="tab-btn ${statsTab === id ? "active" : ""}" data-action="set-stats-tab" data-tab="${id}">${l}</button>`).join("");
     const filter = `<div class="st-filter">${[["all", "Todos"], ["group", "Fase de grupos"], ["ko", "Liguilla"]]
       .map(([id, l]) => `<button class="${statsFilter === id ? "active" : ""}" data-action="set-stats-filter" data-f="${id}">${l}</button>`).join("")}</div>`;
