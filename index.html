@@ -367,7 +367,7 @@
   .st-foot { font-size: 12.5px; color: var(--text-muted); margin: 10px 0 0; line-height: 1.5; }
   table.h2h { border-collapse: separate; border-spacing: 4px; }
   table.h2h th { font-size: 12.5px; color: var(--text-muted); font-weight: 700; padding: 4px 6px; white-space: nowrap; }
-  table.h2h th.row-h { text-align: left; color: var(--text); font-size: 14px; position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  table.h2h th.row-h { text-align: left; color: var(--text); font-size: 14px; position: sticky; left: 0; z-index: 1; background: var(--bg); }
   table.h2h td { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; text-align: center; padding: 7px 8px; min-width: 74px; font-variant-numeric: tabular-nums; }
   table.h2h td .rec { font-weight: 700; font-size: 14px; }
   table.h2h td .gl { font-size: 11.5px; color: var(--text-muted); }
@@ -2166,9 +2166,11 @@
         ${kpiCard("🧱", "Mejor defensiva", kpiLeader(eligible, s => s.gcp, true), v => `<strong>${avg2(v)}</strong> goles en contra por partido`)}
         ${kpiCard("📈", "Mejor % de victorias", kpiLeader(eligible, s => s.pw), v => `<strong>${pct(v)}</strong> de partidos ganados`)}
         ${kpiCard("🏆", "Más campeonatos", kpiLeader(stats, s => s.champ), fmtN("título", "títulos"))}
-        ${kpiCard("🎯", "Más Leagues Cup", kpiLeader(stats, s => s.lc), fmtN("ganada", "ganadas"))}
+        ${statsFilter === "ko" ? "" : kpiCard("🎯", "Más Leagues Cup", kpiLeader(stats, s => s.lc), fmtN("ganada", "ganadas"))}
       </div>`;
-    const col = STAT_COLS.find(c => c.key === statsSort.key) || STAT_COLS[1];
+    // La Leagues Cup solo existe en fase de grupos: no aplica al filtrar la Liguilla.
+    const cols = STAT_COLS.filter(c => !(c.key === "lc" && statsFilter === "ko"));
+    const col = cols.find(c => c.key === statsSort.key) || STAT_COLS[1];
     const dir = statsSort.desc ? -1 : 1;
     const rows = stats.slice().sort((a, b) => dir * (a[col.key] - b[col.key]) || (b.w - a.w) || (b.gf - b.gc - (a.gf - a.gc)) || a.name.localeCompare(b.name));
     const cell = (s, c) => {
@@ -2179,9 +2181,9 @@
       <div class="table-scroll">
         <table class="standings stats-table">
           <thead><tr><th class="pl-head" style="text-align:left">Player</th>
-            ${STAT_COLS.map(c => `<th class="sortable ${statsSort.key === c.key ? "sorted" : ""}" title="${c.title} · ordenar" data-action="sort-stats" data-key="${c.key}">${c.label}${statsSort.key === c.key ? (statsSort.desc ? " ▾" : " ▴") : ""}</th>`).join("")}
+            ${cols.map(c => `<th class="sortable ${statsSort.key === c.key ? "sorted" : ""}" title="${c.title} · ordenar" data-action="sort-stats" data-key="${c.key}">${c.label}${statsSort.key === c.key ? (statsSort.desc ? " ▾" : " ▴") : ""}</th>`).join("")}
           </tr></thead>
-          <tbody>${rows.map(s => `<tr><td class="pl-name" style="text-align:left; font-weight:700;">${escapeHtml(s.name)}</td>${STAT_COLS.map(c => cell(s, c)).join("")}</tr>`).join("")}</tbody>
+          <tbody>${rows.map(s => `<tr><td class="pl-name" style="text-align:left; font-weight:700;">${escapeHtml(s.name)}</td>${cols.map(c => cell(s, c)).join("")}</tr>`).join("")}</tbody>
         </table>
       </div>`;
     return `
@@ -2193,7 +2195,7 @@
         <p class="st-foot">
           Los partidos que se definen en penales cuentan como empate en G-E-P; el ganador de la tanda solo se refleja en la Leagues Cup (fase de grupos) o en su avance en la Liguilla.
           Ofensiva, defensiva y % de victorias se calculan por partido entre quienes han jugado al menos la mitad de los partidos del que más lleva${maxPj ? ` (mínimo ${minPj})` : ""}.
-          Leagues Cup, 🏆 y 🥈 no cambian con el filtro. Toca un encabezado para ordenar.
+          ${statsFilter === "ko" ? "🏆 y 🥈 no cambian con el filtro; la Leagues Cup no se muestra porque solo se juega en fase de grupos." : "Leagues Cup, 🏆 y 🥈 no cambian con el filtro."} Toca un encabezado para ordenar.
         </p>
       </div>`;
   }
@@ -2225,7 +2227,10 @@
             <tbody>${ps.map(a => `<tr><th class="row-h">${escapeHtml(a.name)}</th>${ps.map(b => cellHtml(a.id, b.id)).join("")}</tr>`).join("")}</tbody>
           </table>
         </div>
-        <p class="st-foot">Cada fila es el récord de ese player contra el rival de la columna: <strong>G-E-P</strong> y goles a favor:en contra. Verde = le ha ganado más veces de las que ha perdido; rojo = al revés. Los partidos definidos en penales cuentan como empate.</p>
+        <p class="st-foot">Cada celda es el récord del player de la fila contra el rival de la columna:<br>
+          • Arriba, <strong>G-E-P</strong>: partidos ganados, empatados y perdidos contra ese rival.<br>
+          • Abajo, <strong>goles a favor : goles en contra</strong> sumando todos esos partidos. Ejemplo: <strong>1-0-2</strong> y <strong>4:9</strong> = se enfrentaron 3 veces, ganó 1 y perdió 2; metió 4 goles y le metieron 9.<br>
+          Verde = le ha ganado más veces de las que ha perdido; rojo = al revés. Los partidos definidos en penales cuentan como empate.</p>
       </div>`;
   }
 
