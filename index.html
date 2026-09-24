@@ -2079,7 +2079,7 @@
     const past = dl && Date.now() >= dl.getTime();
     const banner = !dl
       ? `<div class="draft-banner muted">📅 La ${escapeHtml(j.label)} aún no tiene fecha: el límite para subir la alineación se fija cuando el admin la capture.</div>`
-      : `<div class="draft-banner ${past ? "closed" : "open"}"><span class="draft-tag ${past ? "closed" : "open"}" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">${past ? "PLAZO CERRADO" : "ABIERTO"}</span>
+      : `<div class="draft-banner ${past ? "closed" : "open"}"><span class="draft-tag ${past ? "closed" : "open"}" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">${past ? "CERRADO" : "ABIERTO"}</span>
           <span>Límite: <strong>${escapeHtml(formatDeadline(dl))}</strong>${past ? " · Quien la suba ahora queda marcado como <strong>tarde</strong>." : ""}</span></div>`;
     const done = state.players.filter(p => { const l = lineupOf(j.id, p.id); return l && l.submitted_at; }).length;
     const loginHint = !hasSession
