@@ -559,7 +559,7 @@
   let luDrafts = {};          // cambios sin guardar por "jornadaId:playerId"
   let luSaving = null;
   let accDrafts = {};
-  let statsTab = "general";   // "general" | "resumen" | "h2h"
+  let statsTab = "general";   // "general" | "recompensas" | "palmares" | "resumen" | "h2h"
   let statsFilter = "all";    // "all" | "group" | "ko"
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
@@ -2144,12 +2144,14 @@
     { key: "sub", label: "🥈", title: "Subcampeonatos de Jornada" }
   ];
   function renderStatsModule() {
-    const tabs = [["general", "Tabla General"], ["resumen", "Resumen"], ["h2h", "Cara a cara"]]
+    const tabs = [["general", "Tabla General"], ["recompensas", "Recompensas"], ["palmares", "Palmarés"], ["resumen", "Resumen"], ["h2h", "Cara a cara"]]
       .map(([id, l]) => `<button class="tab-btn ${statsTab === id ? "active" : ""}" data-action="set-stats-tab" data-tab="${id}">${l}</button>`).join("");
     const filter = `<div class="st-filter">${[["all", "Todos"], ["group", "Fase de grupos"], ["ko", "Liguilla"]]
       .map(([id, l]) => `<button class="${statsFilter === id ? "active" : ""}" data-action="set-stats-filter" data-f="${id}">${l}</button>`).join("")}</div>`;
-    // La Tabla General es la misma que la pestaña de Torneo.
+    // Tabla General, Recompensas y Palmarés (antes pestañas de Torneo).
     if (statsTab === "general") return { tabs, body: renderGeneralTable() };
+    if (statsTab === "recompensas") return { tabs, body: renderRewards() };
+    if (statsTab === "palmares") return { tabs, body: renderPalmares() };
     const stats = computeStats(statsFilter);
     const body = statsTab === "h2h" ? renderHeadToHead(filter) : renderStatsSummary(filter, stats);
     return { tabs, body };
@@ -2489,27 +2491,21 @@
     await loadSeasonData(); render();
   }
   function renderTournamentModule() {
-    const specialTabs = ["palmares", "recompensas", "general"];
-    if (!activeTab || (!specialTabs.includes(activeTab) && !state.jornadas.some(x => x.label === activeTab))) {
+    // Tabla General, Recompensas y Palmarés viven en el módulo Estadísticas.
+    if (!activeTab || !state.jornadas.some(x => x.label === activeTab)) {
       activeTab = state.jornadas[0].label;
     }
-    const j = specialTabs.includes(activeTab) ? null : state.jornadas.find(x => x.label === activeTab);
+    const j = state.jornadas.find(x => x.label === activeTab);
 
     let body = "";
-    if (activeTab === "palmares") body = renderPalmares();
-    else if (activeTab === "recompensas") body = renderRewards();
-    else if (activeTab === "general") body = renderGeneralTable();
-    else if (j.matches.length === 0) body = jornadaDateHtml(j) + renderAttendanceStage(j);
+    if (j.matches.length === 0) body = jornadaDateHtml(j) + renderAttendanceStage(j);
     else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
 
     const tabs = `
           ${state.jornadas.map(jj => {
             const st = jornadaStatus(jj);
             return `<button class="tab-btn ${st} ${activeTab === jj.label ? "active" : ""}" data-action="set-tab" data-tab="${jj.label}"><span class="flag"></span>${jj.label}</button>`;
-          }).join("")}
-          <button class="tab-btn ${activeTab === "palmares" ? "active" : ""}" data-action="set-tab" data-tab="palmares">🏆 Palmarés</button>
-          <button class="tab-btn ${activeTab === "recompensas" ? "active" : ""}" data-action="set-tab" data-tab="recompensas">🪙 Recompensas</button>
-          <button class="tab-btn ${activeTab === "general" ? "active" : ""}" data-action="set-tab" data-tab="general">📊 Tabla General</button>`;
+          }).join("")}`;
     return { tabs, body };
   }
 
