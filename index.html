@@ -338,6 +338,36 @@
   .draft-tag.open { background: var(--blue); color: #fff; }
   .draft-tag.closed { background: var(--red); color: #fff; }
   .pass-btn { margin-left: auto; padding: 6px 12px; font-size: 13px; }
+  /* ---------- alineaciones ---------- */
+  .lu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .lu-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .lu-card.mine { border-color: var(--accent); }
+  .lu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .lu-head h3 { font-family: var(--font-display); font-size: 21px; margin: 0; }
+  .lu-status { font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 3px 10px; background: var(--surface-2); color: var(--text-muted); white-space: nowrap; }
+  .lu-status.ok { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .lu-status.late { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold); }
+  .lu-status.missing { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
+  .lu-when { font-size: 12px; color: var(--text-muted); margin-top: -6px; }
+  .lu-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lu-img { margin: 0; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .lu-img figcaption { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .lu-img .frame { aspect-ratio: 4 / 3; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px; text-align: center; padding: 0; }
+  .lu-img .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .lu-img .frame.pending-img { outline: 2px dashed var(--gold); outline-offset: -2px; }
+  .lu-code { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
+  .lu-code code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13.5px; }
+  .lu-form { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .lu-form .text-input { padding: 9px 11px; font-size: 14px; }
+  .lu-files { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lu-file { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-align: center; cursor: pointer; font-size: 13px; padding: 8px 10px; }
+  .lu-file input { display: none; }
+  .lu-form .btn-primary { font-size: 16px; padding: 10px 16px; }
+  .lu-note { font-size: 12.5px; color: var(--text-muted); margin: 0; }
+  .lu-note.warn { color: var(--gold); }
+  .acc-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .acc-row .acc-name { font-weight: 700; min-width: 110px; }
+  .acc-row .text-input { min-width: 200px; padding: 8px 10px; font-size: 14px; }
   .jdate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; font-size: 14px; }
   .jdate-row label { font-weight: 600; }
   .jdate-input { flex: 0 0 auto; padding: 7px 10px; font-size: 14px; }
@@ -485,6 +515,14 @@
   let loginError = "";
   let activeTab = null;
   let isAdmin = false;
+  let hasSession = false;
+  let sessionEmail = "";
+  let myPlayerIds = [];       // players ligados al correo de la sesión
+  let playerAccounts = [];    // correos ligados (el admin ve todos; un player, el suyo)
+  let luTab = null;           // pestaña del módulo Alineaciones
+  let luDrafts = {};          // cambios sin guardar por "jornadaId:playerId"
+  let luSaving = null;
+  let accDrafts = {};
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
   // Módulos: "torneo" | "equipos" | "mercado"
@@ -817,8 +855,14 @@
       passes = res.data || [];
     } catch (e) { passes = []; }
 
+    let lineups = [];
+    try {
+      const res = await sb.from("lineups").select("*").eq("season_id", season.id);
+      lineups = res.data || [];
+    } catch (e) { lineups = []; }
+
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes };
+    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups };
   }
 
   function newId() {
@@ -1035,11 +1079,34 @@
   async function submitLogin() {
     const email = ($("#login-user") || {}).value || "";
     const password = ($("#login-pass") || {}).value || "";
-    const { error } = await sb.auth.signInWithPassword({ email, password });
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) { loginError = "Correo o contraseña incorrectos."; render(); return; }
     loginOpen = false; loginError = "";
+    await refreshRole(data && data.session);
     render();
-    showToast("Sesión de admin iniciada. Ya puedes editar.");
+    if (isAdmin) showToast("Sesión de admin iniciada. Ya puedes editar.");
+    else if (myPlayerIds.length) {
+      showToast("Sesión iniciada como " + myPlayerIds.map(playerNameSafe).join(", ") + ". Sube tu alineación en 📋 Alineaciones.");
+    } else showToast("Sesión iniciada, pero tu correo no está ligado a ningún player. Pídeselo al admin.");
+  }
+  function playerNameSafe(id) {
+    const p = state && state.players.find(pl => pl.id === id);
+    return p ? p.name : "tu player";
+  }
+  // Rol de la sesión: admin (tabla admins) o player (correo ligado en player_accounts).
+  async function refreshRole(session) {
+    hasSession = !!session;
+    sessionEmail = session && session.user ? String(session.user.email || "").toLowerCase() : "";
+    if (!session) { isAdmin = false; myPlayerIds = []; playerAccounts = []; return; }
+    try {
+      const { data, error } = await sb.rpc("is_admin");
+      isAdmin = error ? false : data === true;
+    } catch (e) { isAdmin = false; }
+    try {
+      const { data } = await sb.from("player_accounts").select("*");
+      playerAccounts = data || [];
+    } catch (e) { playerAccounts = []; }
+    myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
   }
   async function adminLogout() {
     await sb.auth.signOut();
@@ -1064,6 +1131,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "seasons" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "team_purchases" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "draft_passes" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lineups" }, scheduleReload)
       .subscribe();
   }
 
@@ -1871,8 +1939,11 @@
         <p><strong>Mercado abierto:</strong> al terminar el Draft, cualquiera compra y vende en cualquier orden hasta el domingo a las 11:59 pm (hora del centro de México) previo a la fecha de la siguiente Jornada. Desde ese momento y hasta que termina la Jornada, el Mercado está cerrado.</p>
         <p><strong>Desbloqueo por RAT:</strong> tras la J0 se pueden comprar jugadores de RAT 84 o menos. Al terminar cada Jornada se desbloquea el siguiente nivel: J1 → RAT 85, J2 → 86, J3 → 87, J4 → 88, J5 → 89, J6 → 90, J7 → 91 y desde la J8 todos los jugadores.</p>
         <p><strong>Ventas:</strong> al vender un jugador se recupera el 97% de lo que se pagó y el jugador regresa al Mercado. Se puede vender durante los Drafts y con el Mercado abierto.</p>
+        <h4>Alineaciones</h4>
+        <p>Para cada Jornada de la J1 a la J11, cada player sube en 📋 Alineaciones la imagen de sus titulares, la de su banca y el código de su alineación. El límite es el <strong>martes a las 11:59 pm</strong> (hora del centro de México) inmediatamente anterior a la fecha de la Jornada; la J0 no lleva alineación.</p>
+        <p>Antes del límite se puede cambiar cuantas veces se quiera. Después del límite, quien ya la había entregado ya no puede cambiarla, y quien no la había entregado todavía puede subirla, pero queda marcada como <strong>tarde</strong>. Todos pueden ver las alineaciones de todos.</p>
         <h4>Tus datos</h4>
-        <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Solo el admin puede editar; el resto puede ver todo en vivo sin iniciar sesión.</p>
+        <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Solo el admin edita el torneo; cada player puede iniciar sesión para subir su alineación, y cualquiera puede ver todo en vivo sin iniciar sesión.</p>
         <div class="modal-close-row"><button class="btn-secondary" data-action="close-help">Cerrar</button></div>
       </div>
     </div>`;
@@ -1883,8 +1954,8 @@
     return `
     <div class="modal-overlay">
       <div class="modal-box" data-stop-close>
-        <h3>Acceso de administrador</h3>
-        <p>Solo el admin puede capturar resultados, marcar asistencia, generar la Liguilla y crear temporadas. Los demás pueden ver todo en vivo sin iniciar sesión.</p>
+        <h3>Iniciar sesión</h3>
+        <p>El admin captura resultados, asistencia, Liguilla, compras y temporadas. Cada player puede entrar con su correo para subir su alineación en 📋 Alineaciones. Para solo ver no hace falta iniciar sesión.</p>
         <div class="name-row" style="margin-bottom:10px;">
           <input class="text-input" id="login-user" type="email" placeholder="Correo" autocomplete="username">
         </div>
@@ -1904,10 +1975,10 @@
           <div class="topbar-actions">
             <button class="icon-btn" title="Reglas" data-action="open-help">ℹ️</button>
             <button class="icon-btn" title="Descargar respaldo" data-action="download-backup">⭳</button>
-            ${isAdmin
-              ? `<button class="icon-btn" title="Cerrar sesión admin" data-action="admin-logout">🔓</button>
-                 <button class="icon-btn" title="Nueva temporada" data-action="new-season">⟲</button>`
-              : `<button class="icon-btn" title="Entrar como admin" data-action="open-login">🔒</button>`
+            ${isAdmin ? `<button class="icon-btn" title="Nueva temporada" data-action="new-season">⟲</button>` : ""}
+            ${hasSession
+              ? `<button class="icon-btn" title="Cerrar sesión (${escapeHtml(sessionEmail)})" data-action="admin-logout">🔓</button>`
+              : `<button class="icon-btn" title="Iniciar sesión" data-action="open-login">🔒</button>`
             }
           </div>`;
   }
@@ -1915,7 +1986,8 @@
     { id: "torneo", icon: "🏆", label: "Torneo" },
     { id: "equipos", icon: "👕", label: "Equipos" },
     { id: "mercado", icon: "🛒", label: "Mercado" },
-    { id: "transacciones", icon: "🧾", label: "Transacciones" }
+    { id: "transacciones", icon: "🧾", label: "Transacciones" },
+    { id: "alineaciones", icon: "📋", label: "Alineaciones" }
   ];
   function renderDashboard() {
     const app = $("#app");
@@ -1926,6 +1998,8 @@
       body = renderMarketModule(); wide = true;
     } else if (activeModule === "transacciones") {
       body = renderTransactionsModule();
+    } else if (activeModule === "alineaciones") {
+      ({ tabs: topTabs, body } = renderLineupsModule());
     } else {
       ({ tabs: topTabs, body } = renderTournamentModule());
     }
@@ -1958,6 +2032,239 @@
       ${buyModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
+  }
+
+  /* ============================== alineaciones ============================== */
+  // Límite para subir la alineación: martes 11:59 pm (CDMX, UTC-6) inmediatamente
+  // anterior a la fecha de la Jornada. Devuelve el instante en que ya es tarde
+  // (miércoles 00:00 CDMX). La misma regla vive en la base (lineup_deadline).
+  function lineupDeadline(playDate) {
+    if (!playDate) return null;
+    const [y, m, d] = playDate.split("-").map(Number);
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    const back = ((dow - 2 + 7) % 7) || 7;
+    return new Date(Date.UTC(y, m - 1, d - back + 1, 6, 0, 0));
+  }
+  function formatDeadline(dl) {
+    return formatCloseAt(new Date(dl.getTime() - 60000));
+  }
+  function formatStamp(ts) {
+    return new Date(ts).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  }
+  function lineupImgUrl(path) {
+    if (!path) return null;
+    try { return sb.storage.from("lineups").getPublicUrl(path).data.publicUrl; } catch (e) { return null; }
+  }
+  function lineupOf(jornadaId, playerId) {
+    return (state.lineups || []).find(l => l.jornada_id === jornadaId && l.player_id === playerId) || null;
+  }
+  function canEditLineup(playerId) {
+    return isAdmin || myPlayerIds.includes(playerId);
+  }
+  function defaultLineupTab(js) {
+    const next = js.find(j => { const r = jornadaRewards(j); return !(r && r.finalDone); });
+    return (next || js[js.length - 1]).id;
+  }
+  function renderLineupsModule() {
+    const js = state.jornadas.filter(j => j.jornada_number >= 1);
+    if (!js.length) return { tabs: "", body: `<div class="empty-state">No hay Jornadas con alineación.</div>` };
+    const validTabs = js.map(j => j.id).concat(isAdmin ? ["cuentas"] : []);
+    if (!luTab || !validTabs.includes(luTab)) luTab = defaultLineupTab(js);
+    const tabs = js.map(j => `<button class="tab-btn ${luTab === j.id ? "active" : ""}" data-action="set-lu-tab" data-tab="${j.id}">${escapeHtml(j.label)}</button>`).join("")
+      + (isAdmin ? `<button class="tab-btn ${luTab === "cuentas" ? "active" : ""}" data-action="set-lu-tab" data-tab="cuentas">🔑 Cuentas</button>` : "");
+    if (luTab === "cuentas") return { tabs, body: renderAccounts() };
+
+    const j = js.find(x => x.id === luTab);
+    const dl = lineupDeadline(j.playDate);
+    const past = dl && Date.now() >= dl.getTime();
+    const banner = !dl
+      ? `<div class="draft-banner muted">📅 La ${escapeHtml(j.label)} aún no tiene fecha: el límite para subir la alineación se fija cuando el admin la capture.</div>`
+      : `<div class="draft-banner ${past ? "closed" : "open"}"><span class="draft-tag ${past ? "closed" : "open"}" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">${past ? "PLAZO CERRADO" : "ABIERTO"}</span>
+          <span>Límite: <strong>${escapeHtml(formatDeadline(dl))}</strong>${past ? " · Quien la suba ahora queda marcado como <strong>tarde</strong>." : ""}</span></div>`;
+    const done = state.players.filter(p => { const l = lineupOf(j.id, p.id); return l && l.submitted_at; }).length;
+    const loginHint = !hasSession
+      ? `<p class="lu-note" style="margin-bottom:12px;">¿Eres player? <a href="#" data-action="open-login" style="color:var(--accent)">Inicia sesión</a> para subir tu alineación.</p>`
+      : (!isAdmin && !myPlayerIds.length ? `<p class="lu-note warn" style="margin-bottom:12px;">Tu correo no está ligado a ningún player; pídeselo al admin.</p>` : "");
+    const order = state.players.slice().sort((a, b) => (myPlayerIds.includes(b.id) ? 1 : 0) - (myPlayerIds.includes(a.id) ? 1 : 0));
+    const body = `
+      <div class="section">
+        <div class="section-head"><h2>Alineaciones · ${escapeHtml(j.label)}</h2><span class="sub">Entregadas: ${done}/${state.players.length}</span></div>
+        ${banner}
+        ${loginHint}
+        <div class="lu-grid">${order.map(p => lineupCardHtml(j, p, dl, past)).join("")}</div>
+      </div>`;
+    return { tabs, body };
+  }
+  function lineupCardHtml(j, p, dl, past) {
+    const l = lineupOf(j.id, p.id);
+    const key = j.id + ":" + p.id;
+    const draft = luDrafts[key] || {};
+    const complete = !!(l && l.submitted_at);
+    const partial = !!(l && !complete && (l.code || l.starters_path || l.bench_path));
+    let status;
+    if (complete && l.late) status = `<span class="lu-status late">⏰ Entregada tarde</span>`;
+    else if (complete) status = `<span class="lu-status ok">✅ Entregada</span>`;
+    else if (past) status = `<span class="lu-status missing">${partial ? "⚠️ Incompleta" : "❌ Sin entregar"}</span>`;
+    else status = `<span class="lu-status">${partial ? "🟡 Incompleta" : "⏳ Pendiente"}</span>`;
+    const when = complete ? `<div class="lu-when">Entregada el ${escapeHtml(formatStamp(l.submitted_at))}</div>` : "";
+
+    const mine = myPlayerIds.includes(p.id);
+    const canEdit = canEditLineup(p.id);
+    const locked = canEdit && !isAdmin && past && complete;
+    const editing = canEdit && !locked;
+
+    const img = (kind, label) => {
+      const pend = draft[kind];
+      const url = pend ? pend.url : lineupImgUrl(l && l[kind + "_path"]);
+      const inner = url ? `<img src="${escapeHtml(url)}" alt="${label} de ${escapeHtml(p.name)}" loading="lazy">` : "Sin imagen";
+      const frame = url && !pend
+        ? `<a class="frame" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Ver en grande">${inner}</a>`
+        : `<div class="frame ${pend ? "pending-img" : ""}">${inner}</div>`;
+      return `<figure class="lu-img"><figcaption>${label}${pend ? " · sin guardar" : ""}</figcaption>${frame}</figure>`;
+    };
+    const codeView = l && l.code
+      ? `<div class="lu-code"><code>${escapeHtml(l.code)}</code><button class="mini-btn" data-action="copy-lu-code" data-code="${escapeHtml(l.code)}">Copiar</button></div>`
+      : "";
+
+    let form = "";
+    if (editing) {
+      const saving = luSaving === key;
+      const codeVal = draft.code !== undefined ? draft.code : (l && l.code) || "";
+      const dirty = draft.code !== undefined || draft.starters || draft.bench;
+      form = `
+        <div class="lu-form">
+          <input class="text-input lu-code-input" id="lu-code-${p.id}" data-key="${key}" type="text" placeholder="Código de alineación" value="${escapeHtml(codeVal)}" autocomplete="off">
+          <div class="lu-files">
+            <label class="btn-secondary lu-file">🖼️ Titulares<input type="file" accept="image/*" data-lu-file="starters" data-key="${key}"></label>
+            <label class="btn-secondary lu-file">🪑 Banca<input type="file" accept="image/*" data-lu-file="bench" data-key="${key}"></label>
+          </div>
+          ${past && !complete && !isAdmin ? `<p class="lu-note warn">El plazo ya cerró: tu alineación quedará marcada como tarde.</p>` : ""}
+          ${!past && complete && !isAdmin ? `<p class="lu-note">Puedes cambiarla hasta el martes a las 11:59 pm.</p>` : ""}
+          <button class="btn-primary" data-action="save-lineup" data-j="${j.id}" data-p="${p.id}" ${saving || !dirty ? "disabled" : ""}>${saving ? "Guardando…" : "Guardar alineación"}</button>
+        </div>`;
+    } else if (locked) {
+      form = `<p class="lu-note">🔒 El plazo cerró; tu alineación ya no se puede cambiar.</p>`;
+    }
+    return `
+      <div class="card lu-card ${mine ? "mine" : ""}">
+        <div class="lu-head"><h3>${escapeHtml(p.name)}${mine ? ` <span class="muted" style="font-size:13px; font-family:var(--font-body)">(tú)</span>` : ""}</h3>${status}</div>
+        ${when}
+        ${codeView}
+        <div class="lu-imgs">${img("starters", "Titulares")}${img("bench", "Banca")}</div>
+        ${form}
+      </div>`;
+  }
+
+  // Reduce la foto antes de subirla (lado mayor 1920 px, JPEG).
+  function compressImage(file) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        try {
+          const MAX = 1920;
+          const k = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight));
+          const w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+          const c = document.createElement("canvas");
+          c.width = w; c.height = h;
+          c.getContext("2d").drawImage(im, 0, 0, w, h);
+          c.toBlob(b => { URL.revokeObjectURL(url); resolve(b || file); }, "image/jpeg", 0.85);
+        } catch (e) { URL.revokeObjectURL(url); resolve(file); }
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      im.src = url;
+    });
+  }
+  function pickLineupFile(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { showToast("Elige una imagen."); return; }
+    const key = input.dataset.key, kind = input.dataset.luFile;
+    const d = luDrafts[key] = luDrafts[key] || {};
+    if (d[kind]) URL.revokeObjectURL(d[kind].url);
+    d[kind] = { file, url: URL.createObjectURL(file) };
+    render();
+  }
+  async function saveLineup(jornadaId, playerId) {
+    if (!canEditLineup(playerId)) return;
+    const key = jornadaId + ":" + playerId;
+    const d = luDrafts[key] || {};
+    const l = lineupOf(jornadaId, playerId);
+    luSaving = key; render();
+    try {
+      const row = {
+        season_id: state.season.id, jornada_id: jornadaId, player_id: playerId,
+        code: d.code !== undefined ? (d.code.trim() || null) : (l ? l.code : null),
+        starters_path: l ? l.starters_path : null,
+        bench_path: l ? l.bench_path : null
+      };
+      for (const kind of ["starters", "bench"]) {
+        if (!d[kind]) continue;
+        const blob = await compressImage(d[kind].file);
+        const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+        const path = `${state.season.id}/${jornadaId}/${playerId}/${kind}-${Date.now()}.${ext}`;
+        const { error } = await sb.storage.from("lineups").upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: false });
+        if (error) throw new Error("No se pudo subir la imagen (" + (kind === "starters" ? "titulares" : "banca") + ").");
+        row[kind + "_path"] = path;
+      }
+      const { error } = await sb.from("lineups").upsert(row, { onConflict: "jornada_id,player_id" });
+      if (error) throw new Error(/plazo/i.test(error.message || "") ? "El plazo ya cerró: tu alineación ya no se puede cambiar." : "No se pudo guardar la alineación.");
+      ["starters", "bench"].forEach(k => { if (d[k]) URL.revokeObjectURL(d[k].url); });
+      delete luDrafts[key];
+      await loadSeasonData();
+      const saved = lineupOf(jornadaId, playerId);
+      const missing = [];
+      if (!row.code) missing.push("código");
+      if (!row.starters_path) missing.push("titulares");
+      if (!row.bench_path) missing.push("banca");
+      luSaving = null;
+      render();
+      if (missing.length) showToast("Guardado. Falta: " + missing.join(", ") + ".");
+      else showToast(saved && saved.late ? "Alineación guardada (marcada como tarde)." : "Alineación guardada ✅");
+    } catch (e) {
+      luSaving = null;
+      render();
+      showToast(e.message || "No se pudo guardar la alineación.");
+    }
+  }
+  function copyLineupCode(code) {
+    const done = () => showToast("Código copiado.");
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(done, () => showToast(code));
+    else showToast(code);
+  }
+
+  // Admin: ligar el correo de cada player (la cuenta se crea en Supabase → Authentication).
+  function renderAccounts() {
+    const rows = state.players.map(p => {
+      const acc = playerAccounts.find(a => a.player_id === p.id);
+      const val = accDrafts[p.id] !== undefined ? accDrafts[p.id] : (acc ? acc.email : "");
+      return `<div class="acc-row">
+        <span class="acc-name">${escapeHtml(p.name)}</span>
+        <input class="text-input acc-input" id="acc-${p.id}" data-p="${p.id}" type="email" placeholder="correo@ejemplo.com" value="${escapeHtml(val)}">
+        <button class="mini-btn" data-action="save-account" data-p="${p.id}">Guardar</button>
+      </div>`;
+    }).join("");
+    return `
+      <div class="section">
+        <div class="section-head"><h2>🔑 Cuentas de players</h2></div>
+        <p class="lu-note" style="margin-bottom:10px;">Cada player entra con correo y contraseña y solo puede editar su alineación. Crea su usuario en Supabase (Authentication → Users → Add user → Create new user, con “Auto Confirm User”) y escribe aquí el mismo correo. Deja el campo vacío para quitarle el acceso.</p>
+        <div class="card" style="padding:6px 16px;">${rows}</div>
+      </div>`;
+  }
+  async function saveAccount(playerId) {
+    if (!isAdmin) return;
+    const acc = playerAccounts.find(a => a.player_id === playerId);
+    const email = (accDrafts[playerId] !== undefined ? accDrafts[playerId] : (acc ? acc.email : "")).trim().toLowerCase();
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showToast("Correo no válido."); return; }
+    const res = email
+      ? await sb.from("player_accounts").upsert({ player_id: playerId, email }, { onConflict: "player_id" })
+      : await sb.from("player_accounts").delete().eq("player_id", playerId);
+    if (res.error) { showToast("No se pudo guardar el correo."); return; }
+    delete accDrafts[playerId];
+    const { data: { session } } = await sb.auth.getSession();
+    await refreshRole(session);
+    render();
+    showToast(email ? "Correo ligado a " + playerName(playerId) + "." : "Acceso quitado a " + playerName(playerId) + ".");
   }
   function jornadaDateHtml(j) {
     const pretty = j.playDate
@@ -2387,7 +2694,7 @@
     const tabsScroll = tabsEl ? tabsEl.scrollLeft : 0;
     const kept = captureScoreInputs();
     const a = document.activeElement;
-    const focusId = a && a.id === "market-search" ? a.id : null;
+    const focusId = a && a.id && /^(market-search$|lu-code-|acc-)/.test(a.id) ? a.id : null;
     const caret = focusId ? a.selectionStart : null;
     renderInner();
     restoreScoreInputs(kept);
@@ -2467,10 +2774,14 @@
       case "close-help": helpOpen = false; render(); break;
       case "download-backup": downloadBackup(); break;
       case "new-season": newSeasonFlow(); break;
-      case "open-login": loginOpen = true; loginError = ""; render(); break;
+      case "open-login": e.preventDefault(); loginOpen = true; loginError = ""; render(); break;
       case "close-login": loginOpen = false; loginError = ""; render(); break;
       case "submit-login": submitLogin(); break;
       case "admin-logout": adminLogout(); break;
+      case "set-lu-tab": luTab = el.dataset.tab; render(); break;
+      case "save-lineup": saveLineup(el.dataset.j, el.dataset.p); break;
+      case "copy-lu-code": copyLineupCode(el.dataset.code); break;
+      case "save-account": saveAccount(el.dataset.p); break;
     }
   });
 
@@ -2510,12 +2821,22 @@
   });
   let marketSearchTimer = null;
   document.addEventListener("input", (e) => {
+    if (e.target.classList && e.target.classList.contains("lu-code-input")) {
+      const key = e.target.dataset.key;
+      const d = luDrafts[key] = luDrafts[key] || {};
+      const had = d.code !== undefined;
+      d.code = e.target.value;
+      if (!had) { const btn = e.target.closest(".lu-form").querySelector("[data-action=save-lineup]"); if (btn && luSaving !== key) btn.disabled = false; }
+      return;
+    }
+    if (e.target.classList && e.target.classList.contains("acc-input")) { accDrafts[e.target.dataset.p] = e.target.value; return; }
     if (e.target.id !== "market-search") return;
     marketQuery = e.target.value;
     clearTimeout(marketSearchTimer);
     marketSearchTimer = setTimeout(() => { marketPage = 0; refreshMarketResults(); }, 150);
   });
   document.addEventListener("change", (e) => {
+    if (e.target.dataset && e.target.dataset.luFile) { pickLineupFile(e.target); return; }
     if (e.target.classList && e.target.classList.contains("jdate-input")) { setJornadaDate(e.target.dataset.j, e.target.value); return; }
     if (e.target.id === "tx-player") { txPlayer = e.target.value; render(); return; }
     if (e.target.id === "tx-kind") { txKind = e.target.value; render(); return; }
@@ -2537,11 +2858,15 @@
   async function init() {
     render(); // loading screen
     const { data: { session } } = await sb.auth.getSession();
-    isAdmin = !!session;
+    await refreshRole(session);
     sb.auth.onAuthStateChange((_event, newSession) => {
-      const was = isAdmin;
-      isAdmin = !!newSession;
-      if (was !== isAdmin) render();
+      const before = [isAdmin, hasSession, myPlayerIds.join()].join("|");
+      // Fuera del callback: supabase-js no permite esperar otras llamadas aquí.
+      setTimeout(() => {
+        refreshRole(newSession).then(() => {
+          if (!loading && before !== [isAdmin, hasSession, myPlayerIds.join()].join("|")) render();
+        });
+      }, 0);
     });
     await loadSeasonData();
     loading = false;
