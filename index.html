@@ -1446,7 +1446,7 @@
             <tbody>
               <tr><th>✅ Asistencia</th>${state.players.map(p => `<td><input type="checkbox" data-action="toggle-attendance" data-j="${j.id}" data-p="${p.id}" ${j.activeIds.includes(p.id) ? "checked" : ""} ${attendLocked ? "disabled" : ""} title="${escapeHtml(p.name)}"></td>`).join("")}</tr>
               <tr><th>⏰ Puntualidad<small>Desmarcado = llegó tarde</small></th>${state.players.map(p => cell(p, "retardo")).join("")}</tr>
-              <tr><th>🎮 Consola actualizada<small>${consoles.length || !isAdmin ? "Solo Consola 1 y 2" : "Asigna Consola 1 y 2 arriba"}</small></th>${state.players.map(p => cell(p, "consola")).join("")}</tr>
+              ${j.jornada_number === 0 ? "" : `<tr><th>🎮 Consola actualizada<small>${consoles.length || !isAdmin ? "Solo Consola 1 y 2" : "Asigna Consola 1 y 2 arriba"}</small></th>${state.players.map(p => cell(p, "consola")).join("")}</tr>`}
             </tbody>
           </table>
         </div>`;
@@ -2087,7 +2087,7 @@
         <p>Antes del límite se puede cambiar cuantas veces se quiera. Después del límite, quien ya la había entregado ya no puede cambiarla, y quien no la había entregado todavía puede subirla, pero queda marcada como <strong>tarde</strong>. Todos pueden ver las alineaciones de todos.</p>
         <h4>Penalizaciones</h4>
         <p>Hay tres tipos de falta y cada uno se cuenta por separado: <strong>consola desactualizada</strong> (quien lleva consola no tiene los equipos al día), <strong>alineación</strong> (no subirla completa a tiempo) e <strong>impuntualidad</strong> (llegar después de las 9:15 pm en horario nocturno o de las 5:15 pm en vespertino).</p>
-        <p>Consola: 1ª falta −2 pts y pierde su 1er turno del Draft; 2ª en adelante −3 pts y pierde sus 2 turnos. Alineación: la 1ª es tolerancia; 2ª −2 pts y 1 turno; 3ª en adelante −3 pts y 2 turnos. Impuntualidad: la 1ª y 2ª son tolerancia; 3ª −2 pts y 1 turno; 4ª en adelante −3 pts y 2 turnos.</p>
+        <p>Consola (no aplica en la J0, que se juega con los equipos estándar del FIFA): 1ª falta −2 pts y pierde su 1er turno del Draft; 2ª en adelante −3 pts y pierde sus 2 turnos. Alineación: la 1ª es tolerancia; 2ª −2 pts y 1 turno; 3ª en adelante −3 pts y 2 turnos. Impuntualidad: la 1ª y 2ª son tolerancia; 3ª −2 pts y 1 turno; 4ª en adelante −3 pts y 2 turnos.</p>
         <p>Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y cuentan para las FIFA Coins. Los turnos se pierden en el Draft que sigue a esa Jornada y se saltan solos; el Mercado abierto se usa normalmente. El detalle está en 🚨 Penalizaciones.</p>
         <h4>Tus datos</h4>
         <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Solo el admin edita el torneo; cada player puede iniciar sesión para subir su alineación, y cualquiera puede ver todo en vivo sin iniciar sesión.</p>
@@ -2227,7 +2227,8 @@
     const rows = state.penalties || [];
     const jIdx = {}; state.jornadas.forEach((j, i) => jIdx[j.id] = i);
     const faults = [], waived = [];
-    rows.filter(r => !r.waived && jIdx[r.jornada_id] != null).forEach(r => faults.push({
+    // En la J0 se juega con los equipos estándar del FIFA: no hay falta de consola.
+    rows.filter(r => !r.waived && jIdx[r.jornada_id] != null && !(r.kind === "consola" && state.jornadas[jIdx[r.jornada_id]].jornada_number === 0)).forEach(r => faults.push({
       key: r.id, row: r, auto: false, kind: r.kind, playerId: r.player_id,
       jornada: state.jornadas[jIdx[r.jornada_id]], note: r.note || "", at: r.created_at
     }));
@@ -2382,7 +2383,7 @@
       <div class="section">
         <div class="section-head"><h2>Reglas</h2></div>
         ${rulesHtml}
-        <p class="st-foot">Cada tipo de falta se cuenta por separado. Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y afectan las FIFA Coins de esa Jornada. Los turnos se pierden en el Draft que sigue a esa Jornada (en la J0, el Draft inicial; la J11 no tiene Draft) y el Mercado abierto se puede usar normalmente. Si en una misma Jornada se juntan varias faltas, los puntos se suman y se pierden como máximo 2 turnos. Las alineaciones tarde, incompletas o no subidas cuentan solas al cerrar el plazo (salvo a quien faltó a la Jornada). Los retardos y la consola desactualizada se registran desmarcando la casilla del player en la matriz de asistencia de la Jornada.</p>
+        <p class="st-foot">Cada tipo de falta se cuenta por separado. Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y afectan las FIFA Coins de esa Jornada. Los turnos se pierden en el Draft que sigue a esa Jornada (en la J0, el Draft inicial; la J11 no tiene Draft). En la J0 no hay falta de consola porque se juega con los equipos estándar del FIFA y el Mercado abierto se puede usar normalmente. Si en una misma Jornada se juntan varias faltas, los puntos se suman y se pierden como máximo 2 turnos. Las alineaciones tarde, incompletas o no subidas cuentan solas al cerrar el plazo (salvo a quien faltó a la Jornada). Los retardos y la consola desactualizada se registran desmarcando la casilla del player en la matriz de asistencia de la Jornada.</p>
       </div>`;
   }
   async function addPenalty() {
