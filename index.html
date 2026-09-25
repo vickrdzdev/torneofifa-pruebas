@@ -3123,12 +3123,7 @@
 
     let body = "";
     if (j.matches.length === 0) body = jornadaDateHtml(j) + renderAttendanceStage(j);
-    else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j) + (isAdmin ? `
-      <div class="section"><div class="card">
-        <h2 style="font-family:var(--font-display);font-weight:700;font-size:20px;margin:0 0 4px;">Registro de la ${j.label}</h2>
-        <p class="attend-note">La asistencia ya no cambia porque el calendario está generado; puntualidad y consola se pueden corregir aquí.</p>
-        ${registerMatrixHtml(j)}
-      </div></div>` : "");
+    else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
 
     const tabs = `
           ${state.jornadas.map(jj => {
