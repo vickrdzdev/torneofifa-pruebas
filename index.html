@@ -560,6 +560,9 @@
   .modal-box ol, .modal-box ul { padding-left: 20px; margin: 0 0 8px; }
   .modal-close-row { text-align: right; margin-top: 18px; }
 
+  .login-card { max-width: 420px; margin: 24px auto 40px; position: relative; }
+  .login-card .name-row { margin-bottom: 10px; }
+  .login-card .login-err { color: var(--red); font-size: 13px; margin: 0 0 10px; }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-display); font-size: 18px; }
 </style>
 </head>
@@ -968,6 +971,16 @@
       const res = await sb.from("lineups").select("*").eq("season_id", season.id);
       lineups = res.data || [];
     } catch (e) { lineups = []; }
+    // Las imágenes son privadas: se piden enlaces temporales (12 h) con la sesión.
+    const lineupUrls = {};
+    const paths = [];
+    lineups.forEach(l => { if (l.starters_path) paths.push(l.starters_path); if (l.bench_path) paths.push(l.bench_path); });
+    if (paths.length) {
+      try {
+        const { data } = await sb.storage.from("lineups").createSignedUrls(paths, 60 * 60 * 12);
+        (data || []).forEach(x => { if (x && x.signedUrl) lineupUrls[x.path] = x.signedUrl; });
+      } catch (e) { /* sin imágenes, el resto sigue */ }
+    }
 
     let penalties = [];
     try {
@@ -976,7 +989,7 @@
     } catch (e) { penalties = []; }
 
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, penalties };
+    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, penalties };
   }
 
   function newId() {
@@ -1197,15 +1210,16 @@
   async function submitLogin() {
     const email = ($("#login-user") || {}).value || "";
     const password = ($("#login-pass") || {}).value || "";
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    loginError = "";
+    const { data, error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
     if (error) { loginError = "Correo o contraseña incorrectos."; render(); return; }
-    loginOpen = false; loginError = "";
+    loginOpen = false;
     await refreshRole(data && data.session);
-    render();
+    await startSession();
     if (isAdmin) showToast("Sesión de admin iniciada. Ya puedes editar.");
     else if (myPlayerIds.length) {
       showToast("Sesión iniciada como " + myPlayerIds.map(playerNameSafe).join(", ") + ". Sube tu alineación en 📋 Alineaciones.");
-    } else showToast("Sesión iniciada, pero tu correo no está ligado a ningún player. Pídeselo al admin.");
+    } else showToast("Sesión iniciada.");
   }
   function playerNameSafe(id) {
     const p = state && state.players.find(pl => pl.id === id);
@@ -1228,7 +1242,45 @@
   }
   async function adminLogout() {
     await sb.auth.signOut();
-    showToast("Sesión cerrada — ahora estás en modo solo lectura.");
+    endSession();
+    showToast("Sesión cerrada.");
+  }
+  // Con sesión: carga el torneo y escucha cambios en vivo. Sin sesión no se
+  // carga nada (la base tampoco entrega datos sin sesión).
+  async function startSession() {
+    loading = true; render();
+    await loadSeasonData();
+    loading = false;
+    subscribeRealtime();
+    render();
+  }
+  function endSession() {
+    unsubscribeRealtime();
+    state = null; loading = false;
+    hasSession = false; isAdmin = false; myPlayerIds = []; playerAccounts = [];
+    luDrafts = {}; accDrafts = {}; magnaDraft = null;
+    render();
+  }
+  function renderLoginScreen() {
+    $("#app").innerHTML = `
+      <div class="hero">
+        <div class="hero-inner">
+          ${pitchArtSVG()}
+          <h1>Torneo FIFA Team</h1>
+          <p class="lead">Inicia sesión con tu correo y contraseña para ver el torneo.</p>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="setup-card login-card">
+          <h2>Iniciar sesión</h2>
+          <div class="name-row"><input class="text-input" id="login-user" type="email" placeholder="Correo" autocomplete="username"></div>
+          <div class="name-row"><input class="text-input" id="login-pass" type="password" placeholder="Contraseña" autocomplete="current-password"></div>
+          ${loginError ? `<p class="login-err">${escapeHtml(loginError)}</p>` : ""}
+          <button class="btn-primary" data-action="submit-login">Entrar</button>
+        </div>
+      </div>
+      ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage)}</div>` : ""}
+    `;
   }
 
   /* ============================== realtime ============================== */
@@ -1240,8 +1292,13 @@
       loadSeasonData().then(render);
     }, 350);
   }
+  let realtimeChannel = null;
+  function unsubscribeRealtime() {
+    if (realtimeChannel) { try { sb.removeChannel(realtimeChannel); } catch (e) {} realtimeChannel = null; }
+  }
   function subscribeRealtime() {
-    sb.channel("torneo-fc27-changes")
+    unsubscribeRealtime();
+    realtimeChannel = sb.channel("torneo-fc27-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "jornada_attendance" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "players" }, scheduleReload)
@@ -1317,8 +1374,7 @@
     const cardHtml = locked ? `
         <div class="setup-card" style="margin-top:-26px; text-align:center;">
           <h2>Todavía no hay una temporada activa</h2>
-          <p class="hint">Si eres el admin, inicia sesión para crearla. Si no, espera a que el admin la configure — vas a poder verla en cuanto exista.</p>
-          <button class="btn-primary" data-action="open-login" style="max-width:280px; margin:0 auto;">Iniciar sesión como admin</button>
+          <p class="hint">El admin todavía no la configura. Vas a poder verla en cuanto exista.</p>
         </div>
     ` : `
         <div class="setup-card" style="margin-top:-26px;">
@@ -1344,7 +1400,7 @@
     `;
     app.innerHTML = `
       <div class="mini-topbar">
-        <button class="icon-btn" title="${isAdmin ? "Cerrar sesión admin" : "Entrar como admin"}" data-action="${isAdmin ? "admin-logout" : "open-login"}">${isAdmin ? "🔓" : "🔒"}</button>
+        <button class="icon-btn" title="Cerrar sesión (${escapeHtml(sessionEmail)})" data-action="admin-logout">🔓</button>
       </div>
       <div class="hero">
         <div class="hero-inner">
@@ -2116,7 +2172,7 @@
         <h4>Premios</h4>
         <p>Al terminar el torneo, según los Puntos Generales: Campeón gana $1,600 MXP, 2° gana $1,000, 3° gana $500, 4° paga $100, 5° paga $200, 6° paga $300 y 7° paga $400. Empate en el 1° lugar: Final Magna (2 players) o Mini Torneo Magno (3 o más, todos contra todos, local el mejor colocado en la Tabla General de la J10). Empate en otro lugar: se suman los premios de los lugares que ocupan y se dividen en partes iguales. El detalle está en 💰 Premios.</p>
         <h4>Tus datos</h4>
-        <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Solo el admin edita el torneo; cada player puede iniciar sesión para subir su alineación, y cualquiera puede ver todo en vivo sin iniciar sesión.</p>
+        <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Para ver el torneo hay que iniciar sesión. Solo el admin edita el torneo; cada player puede subir su alineación.</p>
         <div class="modal-close-row"><button class="btn-secondary" data-action="close-help">Cerrar</button></div>
       </div>
     </div>`;
@@ -2767,7 +2823,7 @@
   }
   function lineupImgUrl(path) {
     if (!path) return null;
-    try { return sb.storage.from("lineups").getPublicUrl(path).data.publicUrl; } catch (e) { return null; }
+    return (state.lineupUrls || {})[path] || null;
   }
   function lineupOf(jornadaId, playerId) {
     return (state.lineups || []).find(l => l.jornada_id === jornadaId && l.player_id === playerId) || null;
@@ -3437,11 +3493,13 @@
     const tabsEl = $(".tabs");
     const tabsScroll = tabsEl ? tabsEl.scrollLeft : 0;
     const kept = captureScoreInputs();
+    const loginVals = ["login-user", "login-pass"].map(id => { const el = document.getElementById(id); return el ? el.value : null; });
     const a = document.activeElement;
     const focusId = a && a.id && /^(market-search$|lu-code-|acc-|pen-note$)/.test(a.id) ? a.id : null;
     const caret = focusId ? a.selectionStart : null;
     renderInner();
     restoreScoreInputs(kept);
+    ["login-user", "login-pass"].forEach((id, i) => { const el = document.getElementById(id); if (el && loginVals[i]) el.value = loginVals[i]; });
     const newTabs = $(".tabs");
     if (newTabs) {
       newTabs.scrollLeft = tabsScroll;
@@ -3462,6 +3520,7 @@
       $("#app").innerHTML = `<div class="loading-screen">Cargando torneo…</div>`;
       return;
     }
+    if (!hasSession) { renderLoginScreen(); return; }
     if (!state) { renderSetup(); return; }
     renderDashboard();
   }
@@ -3625,15 +3684,16 @@
       const before = [isAdmin, hasSession, myPlayerIds.join()].join("|");
       // Fuera del callback: supabase-js no permite esperar otras llamadas aquí.
       setTimeout(() => {
+        const had = hasSession;
+        if (!newSession) { if (had) endSession(); return; }
         refreshRole(newSession).then(() => {
+          if (!had && !loading) { startSession(); return; } // sesión iniciada en otra pestaña
           if (!loading && before !== [isAdmin, hasSession, myPlayerIds.join()].join("|")) render();
         });
       }, 0);
     });
-    await loadSeasonData();
-    loading = false;
-    subscribeRealtime();
-    render();
+    if (hasSession) await startSession();
+    else { loading = false; render(); }
   }
   init();
 })();
