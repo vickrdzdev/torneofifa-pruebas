@@ -2093,7 +2093,7 @@
     await loadSeasonData(); render();
     if (!error) {
       const jj = state.jornadas.find(x => x.label === st.key);
-      await queueNotifs([{ key: "ftend:" + (jj ? jj.id : st.key), url: "./?m=mercado", title: "⏸️ Se terminó el Fast Track",
+      await queueNotifs([{ key: "ftend:" + (jj ? jj.id : st.key), url: "./?m=mercado", title: "⛈️ Se terminó el Fast Track",
         body: "El Mercado se cierra. El Draft de la " + st.key + " sigue el " + shortDate(st.resumeAt) + " con el turno de " + playerName(st.playerId) + " (24 h por turno)." }]);
       await syncDraftSchedule();
     }
@@ -2666,15 +2666,15 @@
         if (idx === 0) {
           const st = draftState("initial", j.label, SQUAD_SIZE);
           if (st) rows.push(
-            { key: "draft0:" + state.season.id, exclude: st.playerId, url: "./?m=mercado", title: "🟢 Comienza el Draft inicial", body: "Arranca " + playerName(st.playerId) + "." },
-            { key: "draft0:" + state.season.id + ":me", target: st.playerId, url: "./?m=mercado", title: "🟢 Comienza el Draft inicial", body: "¡Es tu turno! Compra tu primer jugador o pasa." });
+            { key: "draft0:" + state.season.id, exclude: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "Arranca " + playerName(st.playerId) + "." },
+            { key: "draft0:" + state.season.id + ":me", target: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "¡Es tu turno! Compra tu primer jugador o pasa." });
         } else if (idx <= state.jornadas.length - 2) {
           const d = jornadaDraftSim(j).st;
           if (d && d.mode !== "paused") {
             const lost = Object.entries(d.lost || {}).map(([id, n2]) => playerName(id) + " (" + n2 + ")").join(", ");
             const lostTxt = lost ? " Pierden turno por penalización: " + lost + "." : "";
             const fast = d.mode === "fast";
-            const title = fast ? "⚡ Comienza el Fast Track de la " + j.label : "🟢 Comienza el Draft de la " + j.label;
+            const title = fast ? "⚡ ¡Comienza el Fast Track de la " + j.label + "!" : "🟢 Comienza el Draft de la " + j.label;
             rows.push(
               { key: "ft:" + j.id, exclude: d.playerId, url: "./?m=mercado", title, body: "Arranca " + playerName(d.playerId) + "." + (fast ? " Sin límite de tiempo hasta que alguien lo termine." : " Cada turno tiene 24 h.") + lostTxt },
               { key: "ft:" + j.id + ":me", target: d.playerId, url: "./?m=mercado", title, body: "¡Es tu turno! Compra 1 jugador o pasa." + (fast ? "" : " Tienes 24 h.") + lostTxt });
@@ -2754,7 +2754,7 @@
         // Lunes 10:00 previo: el host confirma asistencia.
         const monBack = daysBackTo(pd, 1);
         rows.push({ key: prefix + "host", kind: "host_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10), url: "./?m=torneo",
-          title: "📞 Confirma la asistencia", body: "Eres host (Consola 1) de la " + j.label + " del " + when + ". Manda mensaje a los players para confirmar quién va." });
+          title: "📅 Confirma la asistencia", body: "Eres host (Consola 1) de la " + j.label + " del " + when + ". Manda mensaje a los players para confirmar quién va." });
         if (j.jornada_number >= 1) {
           const dl = lineupDeadline(pd).getTime();
           [18, 22].forEach(h => rows.push({ key: prefix + "lu" + h, kind: "lineup_reminder", jornadaId: j.id, at: dl - (24 - h) * 3600 * 1000, url: "./?m=alineaciones",
