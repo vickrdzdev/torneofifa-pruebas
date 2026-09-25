@@ -533,7 +533,8 @@
   .team-opt.full { opacity: .5; cursor: not-allowed; }
   .confirm-rows { display: grid; gap: 6px; margin: 12px 0; }
   .confirm-rows > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 15px; }
-  .confirm-rows strong { font-variant-numeric: tabular-nums; }
+  .confirm-rows strong { font-variant-numeric: tabular-nums; text-align: right; }
+  .confirm-rows .muted { white-space: nowrap; }
   .full-tag { background: var(--surface); border: 1px solid var(--line); color: var(--text-muted); font-size: 10.5px; border-radius: 5px; padding: 1px 6px; text-transform: uppercase; font-weight: 700; margin-left: 4px; }
   .turn-tag { background: var(--accent); color: var(--accent-ink); font-size: 10.5px; border-radius: 5px; padding: 1px 6px; text-transform: uppercase; font-weight: 700; margin-left: 4px; }
   table.standings td.fc-cell { font-weight: 800; color: var(--blue); font-size: 15px; }
@@ -684,6 +685,7 @@
   let buyCardId = null;       // modal de compra abierto
   let sellId = null;          // modal de venta abierto (id de la compra)
   let passOpen = false;       // modal para pasar turno en el draft
+  let endFtOpen = false;      // modal para terminar el Fast Track
   let buyTeamId = null;
 
   // Escudo del equipo real del player (lo configura el admin en Equipos).
@@ -2100,11 +2102,38 @@
     });
     return out;
   }
-  async function endFastTrack() {
+  function endFtModalHtml() {
+    if (!endFtOpen) return "";
+    const st = marketStatus();
+    if (st.phase !== "draft" || st.mode !== "fast") return "";
+    return `
+    <div class="modal-overlay">
+      <div class="modal-box" data-stop-close>
+        <h3>Terminar el Fast Track</h3>
+        <p class="muted" style="margin:-6px 0 8px;">${escapeHtml(st.title)}</p>
+        <div class="confirm-rows">
+          <div><span class="muted">Reanuda</span><strong>${escapeHtml(shortDate(st.resumeAt))}</strong></div>
+          <div><span class="muted">Con el turno de</span><strong>${escapeHtml(playerName(st.playerId))}</strong></div>
+          <div><span class="muted">Tiempo por turno</span><strong>24 h</strong></div>
+        </div>
+        <p class="muted">El Mercado se cierra y el Draft queda en pausa hasta esa fecha. No se puede deshacer.</p>
+        <div class="modal-close-row" style="gap:10px;">
+          <button class="btn-secondary" data-action="close-end-ft">Cancelar</button>
+          <button class="btn-primary" style="width:auto;" data-action="confirm-end-ft">Terminar Fast Track</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function endFastTrack() {
     const st = marketStatus();
     if (st.phase !== "draft" || st.mode !== "fast") return;
     if (!isAdmin && !myPlayerIds.includes(st.playerId)) return;
-    if (!confirm("¿Terminar el Fast Track del " + st.title + "? El Mercado se cierra y el Draft sigue el " + formatCloseAt(new Date(st.resumeAt)) + " con el turno de " + playerName(st.playerId) + " (24 h por turno).")) return;
+    endFtOpen = true; render();
+  }
+  async function confirmEndFastTrack() {
+    endFtOpen = false;
+    const st = marketStatus();
+    if (st.phase !== "draft" || st.mode !== "fast" || (!isAdmin && !myPlayerIds.includes(st.playerId))) { render(); return; }
     if (!draftRow(st.key) && isAdmin) await sb.from("draft_states").insert({ season_id: state.season.id, draft: st.key });
     const { error } = await sb.rpc("end_fast_track", { p_season: state.season.id, p_draft: st.key, p_player: st.playerId });
     if (error) showToast("No se pudo terminar el Fast Track.");
@@ -2536,6 +2565,7 @@
       ${buyModalHtml()}
       ${sellModalHtml()}
       ${passModalHtml()}
+      ${endFtModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
   }
@@ -4288,7 +4318,7 @@
 
   document.addEventListener("click", (e) => {
     const overlay = e.target.closest(".modal-overlay");
-    if (overlay && !e.target.closest("[data-stop-close]")) { helpOpen = false; loginOpen = false; buyCardId = null; buyTeamId = null; sellId = null; passOpen = false; render(); return; }
+    if (overlay && !e.target.closest("[data-stop-close]")) { helpOpen = false; loginOpen = false; buyCardId = null; buyTeamId = null; sellId = null; passOpen = false; endFtOpen = false; render(); return; }
 
     const el = e.target.closest("[data-action]");
     if (!el) return;
@@ -4340,6 +4370,8 @@
       case "close-pass": passOpen = false; render(); break;
       case "confirm-pass": confirmPass(); break;
       case "end-fast-track": endFastTrack(); break;
+      case "close-end-ft": endFtOpen = false; render(); break;
+      case "confirm-end-ft": confirmEndFastTrack(); break;
       case "toggle-push": togglePush(); break;
       case "open-help": helpOpen = true; render(); break;
       case "close-help": helpOpen = false; render(); break;
