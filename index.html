@@ -3659,15 +3659,14 @@
   /* ============================== módulo: equipos ============================== */
   const PHOTO_BASE = "https://cdn3.futbin.com/content/fifa27/img/players/";
   // Foto grande (modal de compra): las de Futbin son miniaturas de 51 px firmadas, así que
-  // primero se intenta SoFIFA (240 px, mismo ID de EA) y si no existe se usa la de Futbin.
+  // primero se intenta el retrato oficial de EA (mismo ID) y si no existe se usa la de Futbin.
   function bigPhotoHtml(m) {
     if (!m || !m.photo) return "";
     const id = m.photo.split(".")[0];
     const urls = [];
     if (/^\d+$/.test(id)) {
-      const pad = String(id).padStart(6, "0");
-      const path = "https://cdn.sofifa.net/players/" + pad.slice(0, 3) + "/" + pad.slice(3) + "/";
-      urls.push(path + "27_240.png", path + "26_240.png");
+      const ea = v => "https://ratings-images-prod.pulse.ea.com/" + v + "/full/player-portraits/p" + id + ".png";
+      urls.push(ea("FC27"), ea("FC26"));
     }
     urls.push(PHOTO_BASE + m.photo);
     return `<img class="buy-photo" src="${escapeHtml(urls[0])}" data-next="${escapeHtml(urls.slice(1).join(" "))}" alt="" width="96" height="96" referrerpolicy="no-referrer" onerror="const n=(this.dataset.next||'').split(' ').filter(Boolean);if(n.length){this.dataset.next=n.slice(1).join(' ');this.src=n[0];}else{this.style.display='none';}">`;
