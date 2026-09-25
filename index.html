@@ -3754,7 +3754,11 @@
   }
   function renderTeamsModule() {
     loadMarket(); // para las fotos de los jugadores
-    if (!teamsTab || !state.players.some(p => p.id === teamsTab)) teamsTab = state.players[0] && state.players[0].id;
+    // Por default se abre el equipo propio (si la sesión está ligada a un player).
+    if (!teamsTab || !state.players.some(p => p.id === teamsTab)) {
+      const own = state.players.find(p => myPlayerIds.includes(p.id));
+      teamsTab = (own || state.players[0] || {}).id || null;
+    }
     const fin = teamFinances();
     const tabs = state.players.map(p => `<button class="tab-btn ${teamsTab === p.id ? "active" : ""}" data-action="set-team-tab" data-team="${p.id}">${escapeHtml(p.name)}</button>`).join("");
     const f = fin[teamsTab];
@@ -4305,7 +4309,7 @@
       case "group-pk": setGroupShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;
       case "ko-pk": setKOShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;
       case "set-tab": activeTab = el.dataset.tab; render(); break;
-      case "set-module": activeModule = el.dataset.module; navOpen = false; render(); window.scrollTo(0, 0); break;
+      case "set-module": if (el.dataset.module === "equipos" && activeModule !== "equipos") teamsTab = null; activeModule = el.dataset.module; navOpen = false; render(); window.scrollTo(0, 0); break;
       case "open-nav": navOpen = true; render(); break;
       case "close-nav": navOpen = false; render(); break;
       case "set-team-tab": teamsTab = el.dataset.team; render(); break;
