@@ -2621,6 +2621,11 @@
     try { await sb.from("notifications").delete().like("key", prefix + "%").is("sent_at", null); } catch (e) {}
     await queueNotifs(rows.filter(r => r.at > Date.now()));
   }
+  // Quién hizo la operación (no se le avisa a sí mismo): el dueño del equipo si es su sesión;
+  // si un admin opera por otro equipo, se excluye al admin y el dueño sí recibe el aviso.
+  function notifActor(teamId) {
+    return myPlayerIds.includes(teamId) ? teamId : (myPlayerIds[0] || null);
+  }
   const FC_TXT = n => "ϝ" + fcNumber(n);
   function shortDate(ms) {
     return new Date(ms).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
@@ -4085,7 +4090,7 @@
     await loadSeasonData(); render();
     if (!error) {
       const pu = (state.purchases || []).filter(x => x.card_id === m.id && x.player_id === teamId && !x.sold_at).pop();
-      await queueNotifs([{ key: "buy:" + (pu ? pu.id : m.id + ":" + Date.now()), url: "./?m=transacciones",
+      await queueNotifs([{ key: "buy:" + (pu ? pu.id : m.id + ":" + Date.now()), url: "./?m=transacciones", exclude: notifActor(teamId),
         title: "💸 " + playerName(teamId) + " compró a " + m.name, body: m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price) + " · " + (before.phase === "draft" ? before.title : "Mercado abierto") }]);
       await notifyDraftAdvance(before, teamId);
     }
@@ -4103,7 +4108,7 @@
     if (error) showToast("No se pudo registrar la venta.");
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
     await loadSeasonData(); render();
-    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", image: cardImage(pu.card_id),
+    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", image: cardImage(pu.card_id), exclude: notifActor(pu.player_id),
       title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado." }]);
   }
   async function undoPurchase(purchaseId) {
