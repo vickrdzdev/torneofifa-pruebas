@@ -368,6 +368,7 @@
   .draft-banner.closed { border-color: var(--red); }
   .draft-tag.open { background: var(--blue); color: #fff; }
   .draft-tag.closed { background: var(--red); color: #fff; }
+  .icon-btn.bell-off { opacity: .55; }
   .my-turn { flex-basis: 100%; font-weight: 700; color: var(--accent); }
   .draft-clock { flex-basis: 100%; font-size: 13px; color: var(--text-muted); }
   .draft-clock strong { color: var(--text); }
@@ -596,6 +597,10 @@
   // pruebas vickrdzdev.github.io/torneofifa-pruebas, copias locales) se usa la base de pruebas.
   const PROD_HOSTS = ["torneofifa.com", "www.torneofifa.com"];
   const IS_TEST_ENV = !PROD_HOSTS.includes(location.hostname);
+  // Llave pública para notificaciones push (la privada vive en el servidor).
+  const VAPID_PUBLIC = IS_TEST_ENV
+    ? "BIPAuwSogSlMMzavPGUQQVCpT9HeGQgN1mxzuYjIw5JQun4phuycjoz6cRlKdvnoWhcnEsbgKQgIf1uZtC7qdbs"
+    : "BJuDm4Fub96yd9DA7ScIlhyr3DtuPPGcps5nuH0F3TjtXrvWrkWDrgky5W_NSeG71n_PYKd-T0TO91Q2b_w8Rck";
   const SUPABASE_URL = IS_TEST_ENV
     ? "https://bcvzgwnwjtcmtbhwruhi.supabase.co"      // torneofifa-pruebas
     : "https://zohacxiwuapnziicaarj.supabase.co";     // torneofifa (real)
@@ -654,7 +659,9 @@
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
   // Módulos: "torneo" | "equipos" | "mercado"
-  let activeModule = "torneo";
+  let activeModule = (() => {
+    try { const m = new URLSearchParams(location.search).get("m"); return m || "torneo"; } catch (e) { return "torneo"; }
+  })();
   let navOpen = false;
   let teamsTab = null;
   let market = null;          // jugadores del mercado (market.json)
@@ -1131,6 +1138,9 @@
     if (j.activeIds.length < 4) return;
     generateFixturesLocal(jIndex);
     await persistJornada(j);
+    const jj = state && state.jornadas.find(x => x.id === jornadaId);
+    if (jj && jj.matches.length) await queueNotifs([{ key: "start:" + jornadaId, url: "./?m=torneo", title: "📣 ¡Inicia la " + jj.label + "!",
+      body: "Ya está el calendario: " + new Set(jj.matches.flatMap(m => [m.homeId, m.awayId])).size + " players y " + jj.matches.length + " partidos. ¡Suerte!" }]);
   }
 
   async function setGroupGoal(jornadaId, matchId, side, value) {
@@ -1283,6 +1293,8 @@
     myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
   }
   async function adminLogout() {
+    await dropPushOnLogout();
+    pushOn = false;
     await sb.auth.signOut();
     endSession();
     showToast("Sesión cerrada.");
@@ -1295,6 +1307,8 @@
     loading = false;
     subscribeRealtime();
     render();
+    refreshPushState();
+    emitDerivedNotifs();
   }
   function endSession() {
     unsubscribeRealtime();
@@ -1330,7 +1344,7 @@
     clearTimeout(realtimeTimer);
     realtimeTimer = setTimeout(() => {
       if (pendingSaves > 0) return; // el guardado en curso recarga al terminar
-      loadSeasonData().then(render);
+      loadSeasonData().then(() => { render(); emitDerivedNotifs(); });
     }, 350);
   }
   // Al volver a la app (desbloquear el celular, regresar de otra app o
@@ -1600,9 +1614,10 @@
     if (!j || !j.activeIds.includes(playerId)) return;
     const res = jornadaFlag(j, playerId, kind)
       ? await sb.from("penalties").delete().eq("jornada_id", jornadaId).eq("player_id", playerId).eq("kind", kind)
-      : await sb.from("penalties").insert({ season_id: state.season.id, jornada_id: jornadaId, player_id: playerId, kind, note: "Registrada en la " + j.label });
+      : await sb.from("penalties").insert({ season_id: state.season.id, jornada_id: jornadaId, player_id: playerId, kind, note: "Registrada en la " + j.label }).select("id");
     if (res.error) showToast("No se pudo guardar el cambio.");
     await loadSeasonData(); render();
+    if (!res.error && res.data && res.data[0]) await notifyPenalty(res.data[0].id);
   }
   function renderAttendanceStage(j) {
     // La matriz de asistencia, puntualidad y consola solo la ven los admins.
@@ -2076,6 +2091,12 @@
     const { error } = await sb.rpc("end_fast_track", { p_season: state.season.id, p_draft: st.key, p_player: st.playerId });
     if (error) showToast("No se pudo terminar el Fast Track.");
     await loadSeasonData(); render();
+    if (!error) {
+      const jj = state.jornadas.find(x => x.label === st.key);
+      await queueNotifs([{ key: "ftend:" + (jj ? jj.id : st.key), url: "./?m=mercado", title: "⏸️ Se terminó el Fast Track",
+        body: "El Mercado se cierra. El Draft de la " + st.key + " sigue el " + shortDate(st.resumeAt) + " con el turno de " + playerName(st.playerId) + " (24 h por turno)." }]);
+      await syncDraftSchedule();
+    }
   }
   function formatLeft(ms) {
     if (ms <= 0) return "0 min";
@@ -2394,6 +2415,8 @@
         <p>Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y cuentan para las FIFA Coins. Los turnos se pierden en el Draft que sigue a esa Jornada y se saltan solos; el Mercado abierto se usa normalmente. El detalle está en 🚨 Penalizaciones.</p>
         <h4>Premios</h4>
         <p>Al terminar el torneo, según los Puntos Generales: Campeón gana $1,600 MXP, 2° gana $1,000, 3° gana $500, 4° paga $100, 5° paga $200, 6° paga $300 y 7° paga $400. Empate en el 1° lugar: Final Magna (2 players) o Mini Torneo Magno (3 o más, todos contra todos, local el mejor colocado en la Tabla General de la J10). Empate en otro lugar: se suman los premios de los lugares que ocupan y se dividen en partes iguales. El detalle está en 💰 Premios.</p>
+        <h4>Notificaciones</h4>
+        <p>Toca 🔕 en la barra de arriba para activar los avisos en tu celular (en iPhone, primero instala la app en la pantalla de inicio). Recibirás: inicio de cada Jornada, resultados, Fast Track y Draft (turnos, tiempo restante, turnos perdidos), compras y ventas, apertura y cierre del Mercado, recordatorios de alineación, consola y asistencia, penalizaciones y el campeón del torneo.</p>
         <h4>Tus datos</h4>
         <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Para ver el torneo hay que iniciar sesión. Solo el admin edita el torneo; cada player puede subir su alineación.</p>
         <div class="modal-close-row"><button class="btn-secondary" data-action="close-help">Cerrar</button></div>
@@ -2425,6 +2448,7 @@
   function topbarActionsHtml() {
     return `
           <div class="topbar-actions">
+            ${pushSupported() ? `<button class="icon-btn ${pushOn ? "" : "bell-off"}" title="${pushOn ? "Notificaciones activadas (toca para desactivar)" : "Activar notificaciones"}" data-action="toggle-push">${pushOn ? "🔔" : "🔕"}</button>` : ""}
             <button class="icon-btn" title="Reglas" data-action="open-help">ℹ️</button>
             <button class="icon-btn" title="Descargar respaldo" data-action="download-backup">⭳</button>
             ${isAdmin ? `<button class="icon-btn" title="Nueva temporada" data-action="new-season">⟲</button>` : ""}
@@ -2445,6 +2469,7 @@
     { id: "premios", icon: "💰", label: "Premios" }
   ];
   function renderDashboard() {
+    if (!MODULES.some(m => m.id === activeModule)) activeModule = "torneo";
     const app = $("#app");
     let topTabs = "", body = "", wide = false;
     if (activeModule === "equipos") {
@@ -2493,6 +2518,292 @@
       ${buyModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
+  }
+
+  /* ============================== notificaciones push ============================== */
+  // Cada celular se registra en push_subscriptions. Los avisos se agregan a la
+  // tabla notifications (con hora de envío) y la función "notify" del servidor
+  // los manda; la app la llama al agregar un aviso inmediato y el servidor la
+  // revisa cada minuto para los programados.
+  let pushOn = false;
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && window.isSecureContext;
+  }
+  function b64ToBytes(b64) {
+    const pad = "=".repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+  }
+  async function currentPushSub() {
+    if (!pushSupported()) return null;
+    try { const reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch (e) { return null; }
+  }
+  // Liga la suscripción de este celular con la cuenta con sesión.
+  async function savePushSub(sub) {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session || !sub) return false;
+    const j = sub.toJSON();
+    await sb.from("push_subscriptions").delete().eq("endpoint", j.endpoint); // por si era de otra cuenta
+    const { error } = await sb.from("push_subscriptions").insert({
+      user_id: session.user.id, email: String(session.user.email || "").toLowerCase(),
+      endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth
+    });
+    return !error;
+  }
+  async function refreshPushState() {
+    const sub = await currentPushSub();
+    const before = pushOn;
+    pushOn = !!sub && Notification.permission === "granted";
+    if (pushOn && hasSession) await savePushSub(sub);
+    if (before !== pushOn) render();
+  }
+  async function togglePush() {
+    if (!pushSupported()) {
+      showToast("Tu navegador no permite notificaciones. En iPhone, instala la app en la pantalla de inicio.");
+      return;
+    }
+    if (pushOn) {
+      if (!confirm("¿Desactivar las notificaciones en este dispositivo?")) return;
+      const sub = await currentPushSub();
+      if (sub) {
+        await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+        try { await sub.unsubscribe(); } catch (e) {}
+      }
+      pushOn = false; render();
+      showToast("Notificaciones desactivadas.");
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { showToast("No diste permiso. Actívalo en los ajustes del navegador para recibir avisos."); return; }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) ||
+        await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
+      if (!(await savePushSub(sub))) throw new Error();
+      pushOn = true; render();
+      showToast("🔔 Notificaciones activadas en este dispositivo.");
+    } catch (e) {
+      showToast("No se pudieron activar las notificaciones.");
+    }
+  }
+  async function dropPushOnLogout() {
+    const sub = await currentPushSub();
+    if (sub) await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+  }
+
+  // ---- cola de avisos ----
+  let notifyTimer = null;
+  function kickNotify() {
+    clearTimeout(notifyTimer);
+    notifyTimer = setTimeout(() => { try { sb.functions.invoke("notify", { body: {} }).catch(() => {}); } catch (e) {} }, 400);
+  }
+  // rows: [{ key, title, body, target?, exclude?, kind?, jornadaId?, image?, url?, at? }]
+  async function queueNotifs(rows, opts) {
+    rows = (rows || []).filter(Boolean);
+    if (!rows.length || !state) return;
+    const payload = rows.map(r => ({
+      season_id: state.season.id, key: r.key, kind: r.kind || "plain", jornada_id: r.jornadaId || null,
+      target_player: r.target || null, exclude_player: r.exclude || null,
+      title: r.title, body: r.body || "", image: r.image || null, url: r.url || null,
+      send_at: new Date(r.at || Date.now()).toISOString(),
+      ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
+    }));
+    try { await sb.from("notifications").upsert(payload, { onConflict: "key", ignoreDuplicates: true }); } catch (e) { return; }
+    if (!(opts && opts.sent) && rows.some(r => !r.at || r.at <= Date.now())) kickNotify();
+  }
+  // Reemplaza los avisos pendientes cuyo key empieza con `prefix`.
+  async function replaceScheduled(prefix, rows) {
+    try { await sb.from("notifications").delete().like("key", prefix + "%").is("sent_at", null); } catch (e) {}
+    await queueNotifs(rows.filter(r => r.at > Date.now()));
+  }
+  const FC_TXT = n => "ϝ" + fcNumber(n);
+  function shortDate(ms) {
+    return new Date(ms).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  }
+  // Hora CDMX (UTC-6) de un día relativo a una fecha "YYYY-MM-DD".
+  function cdmxAt(dateStr, addDays, hh, mm) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return Date.UTC(y, m - 1, d + addDays, hh + 6, mm || 0, 0);
+  }
+  function daysBackTo(dateStr, dow) { // días hacia atrás hasta el `dow` anterior (0 = domingo)
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const cur = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    return ((cur - dow + 7) % 7) || 7;
+  }
+  function prettyDate(dateStr) {
+    return new Date(dateStr + "T12:00:00Z").toLocaleDateString("es-MX", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" });
+  }
+
+  // ---- avisos derivados del estado (los emite la app de un admin) ----
+  // La primera vez en una temporada solo marca lo que ya pasó, sin avisar.
+  let derivedBusy = false;
+  async function emitDerivedNotifs() {
+    if (!isAdmin || !state || derivedBusy) return;
+    derivedBusy = true;
+    try {
+      const rows = [];
+      const g = generalTable();
+      state.jornadas.forEach((j, idx) => {
+        const r = jornadaRewards(j);
+        if (!r || !r.finalDone) return;
+        const champ = j.playoff && j.playoff.championId;
+        const pen = penaltiesByJornada()[j.id] || {};
+        const penTxt = Object.entries(pen).filter(([, x]) => x.pts).map(([id, x]) => playerName(id) + " −" + x.pts).join(", ");
+        const snap = g.snapshots[j.label];
+        r.rows.forEach(row => {
+          const fc = jornadaFifaCoins(j, r, g.snapshots, row);
+          const place = snap ? snap.rank[row.playerId] : null;
+          rows.push({
+            key: "result:" + j.id + ":" + row.playerId, target: row.playerId, url: "./?m=estadisticas",
+            title: "🏆 Resultado de la " + j.label,
+            body: (champ === row.playerId ? "¡Fuiste el campeón! " : "Campeón: " + playerName(champ) + ". ") +
+              (place ? "Quedaste " + place + "° en la Tabla General" : "") + (fc != null ? " y ganaste " + FC_TXT(fc) + "." : ".") +
+              (penTxt ? " Penalizaciones: " + penTxt + " pts." : "")
+          });
+        });
+        // Aviso de arranque del Draft: solo para la Jornada recién terminada.
+        if (idx !== lastFinishedIndex()) return;
+        if (idx === 0) {
+          const st = draftState("initial", j.label, SQUAD_SIZE);
+          if (st) rows.push(
+            { key: "draft0:" + state.season.id, exclude: st.playerId, url: "./?m=mercado", title: "🟢 Comienza el Draft inicial", body: "Arranca " + playerName(st.playerId) + "." },
+            { key: "draft0:" + state.season.id + ":me", target: st.playerId, url: "./?m=mercado", title: "🟢 Comienza el Draft inicial", body: "¡Es tu turno! Compra tu primer jugador o pasa." });
+        } else if (idx <= state.jornadas.length - 2) {
+          const d = jornadaDraftSim(j).st;
+          if (d && d.mode !== "paused") {
+            const lost = Object.entries(d.lost || {}).map(([id, n2]) => playerName(id) + " (" + n2 + ")").join(", ");
+            const lostTxt = lost ? " Pierden turno por penalización: " + lost + "." : "";
+            const fast = d.mode === "fast";
+            const title = fast ? "⚡ Comienza el Fast Track de la " + j.label : "🟢 Comienza el Draft de la " + j.label;
+            rows.push(
+              { key: "ft:" + j.id, exclude: d.playerId, url: "./?m=mercado", title, body: "Arranca " + playerName(d.playerId) + "." + (fast ? " Sin límite de tiempo hasta que alguien lo termine." : " Cada turno tiene 24 h.") + lostTxt },
+              { key: "ft:" + j.id + ":me", target: d.playerId, url: "./?m=mercado", title, body: "¡Es tu turno! Compra 1 jugador o pasa." + (fast ? "" : " Tienes 24 h.") + lostTxt });
+          }
+        }
+      });
+      if (seasonFinished()) {
+        const ps = prizeStandings();
+        const champ = ps.rows.find(x => x.place === 1 && !x.placeTo);
+        if (champ) rows.push({ key: "champion:" + state.season.id, url: "./?m=premios", title: "👑 ¡" + playerName(champ.playerId) + " es el Campeón del Torneo!", body: "¡Felicidades! Terminó el torneo con " + champ.total + " puntos generales. Revisa los premios en la app." });
+      }
+      const baseKey = "baseline:" + state.season.id;
+      const { data: had } = await sb.from("notifications").select("key").eq("key", baseKey);
+      if (!had || !had.length) {
+        await queueNotifs(rows, { sent: true });
+        await queueNotifs([{ key: baseKey, title: "base", body: "" }], { sent: true });
+      } else {
+        await queueNotifs(rows);
+      }
+      await syncDraftSchedule();
+      await syncCalendarSchedule();
+    } finally { derivedBusy = false; }
+  }
+
+  // ---- reloj del Draft: avisos programados (3 h, turno perdido, siguiente turno) ----
+  async function syncDraftSchedule() {
+    if (!state) return;
+    const last = lastFinishedIndex();
+    if (last < 1 || last > state.jornadas.length - 2) return;
+    const j = state.jornadas[last];
+    const prefix = "sched:" + j.id + ":";
+    const rows = [];
+    const nextJ = state.jornadas[last + 1];
+    const closeAt = nextJ ? marketCloseAt(nextJ.playDate) : null;
+    const closeMs = closeAt ? closeAt.getTime() : Infinity;
+    let cur = jornadaDraftSim(j).st;
+    if (cur) {
+      const title = "Draft de la " + j.label;
+      if (cur.mode !== "clock" && cur.resumeAt < closeMs) {
+        const s0 = jornadaDraftSim(j, cur.resumeAt + 1).st;
+        if (s0) rows.push(
+          { key: prefix + "mon", at: cur.resumeAt, exclude: s0.playerId, url: "./?m=mercado", title: "🟢 Comienza el " + title, body: "Turno de " + playerName(s0.playerId) + ". Cada turno tiene 24 h." },
+          { key: prefix + "mon:me", at: cur.resumeAt, target: s0.playerId, url: "./?m=mercado", title: "🟢 Comienza el " + title, body: "¡Es tu turno! Tienes 24 h para comprar o pasar." });
+      }
+      let t = cur.mode === "clock" ? Date.now() : cur.resumeAt + 1;
+      for (let guard = 0; guard < 40; guard++) {
+        const st = jornadaDraftSim(j, t).st;
+        if (!st || st.mode !== "clock" || !st.deadline) break;
+        const dl = st.deadline;
+        if (dl > closeMs) break;
+        const who = st.playerId, tag = prefix + st.pick + ":";
+        rows.push({ key: tag + "warn", at: dl - 3 * 3600 * 1000, target: who, url: "./?m=mercado", title: "⏳ Te quedan 3 horas", body: ("Tu turno en el " + title + " termina el " + shortDate(dl) + ". ¡Compra o pasa!").replace("..", ".") });
+        rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se agotaron tus 24 h en el " + title + "." });
+        const nx = jornadaDraftSim(j, dl + 1).st;
+        if (nx) {
+          rows.push({ key: tag + "next", at: dl, exclude: nx.playerId, url: "./?m=mercado", title: "🔄 Turno de " + playerName(nx.playerId), body: "Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + "." });
+          rows.push({ key: tag + "next:me", at: dl, target: nx.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(who) + ". Comienza tu turno: tienes 24 h." });
+        } else {
+          rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + title + ". Compras y ventas libres" + (closeAt ? " hasta el " + shortDate(closeMs) : ".") });
+        }
+        t = dl + 1;
+      }
+    }
+    await replaceScheduled(prefix, rows);
+  }
+
+  // ---- recordatorios de calendario (alineación, consola, host, cierre del Mercado) ----
+  async function syncCalendarSchedule() {
+    if (!isAdmin || !state) return;
+    const fin = lastFinishedIndex();
+    for (let i = Math.max(0, fin + 1); i < state.jornadas.length; i++) {
+      const j = state.jornadas[i];
+      const prefix = "cal:" + j.id + ":";
+      const rows = [];
+      if (j.playDate && !j.matches.length) {
+        const pd = j.playDate, when = prettyDate(pd);
+        // Lunes 10:00 previo: el host confirma asistencia.
+        const monBack = daysBackTo(pd, 1);
+        rows.push({ key: prefix + "host", kind: "host_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10), url: "./?m=torneo",
+          title: "📞 Confirma la asistencia", body: "Eres host (Consola 1) de la " + j.label + " del " + when + ". Manda mensaje a los players para confirmar quién va." });
+        if (j.jornada_number >= 1) {
+          const dl = lineupDeadline(pd).getTime();
+          [18, 22].forEach(h => rows.push({ key: prefix + "lu" + h, kind: "lineup_reminder", jornadaId: j.id, at: dl - (24 - h) * 3600 * 1000, url: "./?m=alineaciones",
+            title: "📋 Sube tu alineación", body: "Hoy a las 11:59 pm vence el plazo para la " + j.label + ". Te faltan código, titulares o banca." }));
+          // Falta automática al vencer el plazo: aviso personal con la penalización que tocaría.
+          const pf = penaltyFaults();
+          state.players.forEach(p => {
+            const n = pf.active.filter(f => f.playerId === p.id && f.kind === "alineacion" && state.jornadas.indexOf(f.jornada) < i).length + 1;
+            const sc = sanctionFor("alineacion", n);
+            rows.push({ key: prefix + "ludl:" + p.id, kind: "lineup_deadline", jornadaId: j.id, target: p.id, at: dl + 60 * 1000, url: "./?m=penalizaciones",
+              title: "🚨 Penalización", body: "No entregaste tu alineación completa a tiempo para la " + j.label + " (" + n + "ª falta): " + sanctionText(sc, j) + "." });
+          });
+          // Miércoles 10:00 previo: consolas actualizadas.
+          const wedBack = daysBackTo(pd, 3);
+          rows.push({ key: prefix + "con", kind: "console_reminder", jornadaId: j.id, at: cdmxAt(pd, -wedBack, 10), url: "./?m=torneo",
+            title: "🎮 Te toca llevar consola", body: "La " + j.label + " es el " + when + ". Actualiza los equipos de todos en tu consola." });
+          // Domingo 5:00 pm: cierra el Mercado.
+          const close = marketCloseAt(pd);
+          if (close) rows.push({ key: prefix + "mkt", at: close.getTime() - (6 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=mercado",
+            title: "⏰ El Mercado cierra hoy", body: "Cierra a las 11:59 pm, antes de la " + j.label + ". Aprovecha para comprar o vender." });
+        }
+      }
+      await replaceScheduled(prefix, rows);
+    }
+  }
+
+  // ---- avisos por acciones ----
+  function draftSnapshot() {
+    const st = marketStatus();
+    return { phase: st.phase, key: st.key, pick: st.pick, playerId: st.playerId, title: st.title, mode: st.mode };
+  }
+  // Tras una compra/pase: avisa el cambio de turno o que se abrió el Mercado.
+  async function notifyDraftAdvance(before, actorId) {
+    const after = draftSnapshot();
+    const rows = [];
+    if (before.phase === "draft" && after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
+      const clock = after.mode === "clock" ? " Tienes 24 h." : "";
+      rows.push(
+        { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick, exclude: after.playerId, url: "./?m=mercado", title: "🔄 Turno de " + playerName(after.playerId), body: "Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." },
+        { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick + ":me", target: after.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(actorId) + ". Comienza tu turno." + clock });
+    } else if (before.phase === "draft" && after.phase === "open") {
+      rows.push({ key: "open:" + state.season.id + ":" + before.key, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + before.title.replace("Fast Track ", "") + ". Compras y ventas libres." });
+    }
+    await queueNotifs(rows);
+    await syncDraftSchedule();
+  }
+  function cardImage(cardId) {
+    const m = market && market.byId ? market.byId[cardId] : null;
+    return m && m.photo ? PHOTO_BASE + m.photo : null;
   }
 
   /* ============================== premios ============================== */
@@ -2842,16 +3153,23 @@
   async function addPenalty() {
     if (!isAdmin || penSaving) return;
     penSaving = true; render();
-    const { error } = await sb.from("penalties").insert({
+    const { data: ins, error } = await sb.from("penalties").insert({
       season_id: state.season.id, jornada_id: penForm.jornada, player_id: penForm.player,
       kind: penForm.kind, note: penForm.note.trim() || null
-    });
+    }).select("id");
     penSaving = false;
     if (error) { showToast("No se pudo registrar la falta."); render(); return; }
     const who = playerName(penForm.player);
     penForm.note = "";
     await loadSeasonData(); render();
+    if (ins && ins[0]) await notifyPenalty(ins[0].id);
     showToast("Falta registrada a " + who + ".");
+  }
+  async function notifyPenalty(rowId) {
+    const f = penaltyFaults().active.find(x => x.row && x.row.id === rowId);
+    if (!f) return;
+    await queueNotifs([{ key: "pen:" + rowId, target: f.playerId, url: "./?m=penalizaciones", title: "🚨 Penalización",
+      body: PEN_KINDS[f.kind].label + " en la " + f.jornada.label + " (" + f.n + "ª falta): " + sanctionText(f.sanction, f.jornada) + "." }]);
   }
   async function waivePenalty(jornadaId, playerId) {
     if (!isAdmin) return;
@@ -3301,12 +3619,19 @@
       await sb.from("penalties").delete().eq("jornada_id", jornadaId).eq("player_id", prev).eq("kind", "consola");
     }
     await loadSeasonData(); render();
+    if (!error && value) {
+      const jj = state.jornadas.find(x => x.id === jornadaId);
+      const slot = col === "console1_id" ? "Consola 1 (host)" : "Consola 2";
+      await queueNotifs([{ key: "console:" + jornadaId + ":" + col + ":" + value, target: value, url: "./?m=torneo", title: "🎮 Te toca llevar consola",
+        body: "Eres " + slot + " de la " + jj.label + (jj.playDate ? " (" + prettyDate(jj.playDate) + ")" : "") + "." + (jj.jornada_number > 0 ? " Lleva los equipos de todos actualizados." : "") }]);
+    }
   }
   async function setJornadaDate(jornadaId, value) {
     if (!isAdmin) return;
     const { error } = await sb.from("jornadas").update({ play_date: value || null }).eq("id", jornadaId);
     if (error) showToast("No se pudo guardar la fecha.");
     await loadSeasonData(); render();
+    await syncCalendarSchedule();
   }
   function renderTournamentModule() {
     // Tabla General, Recompensas y Palmarés viven en el módulo Estadísticas.
@@ -3598,9 +3923,11 @@
     if (st.phase !== "draft" || !st.canPass || !tradePerms(st.playerId, st).pass) return;
     const who = myPlayerIds.includes(st.playerId) && !isAdmin ? "Pasas tu turno" : playerName(st.playerId) + " pasa su turno";
     if (!confirm(who + " en el " + st.title + ". ¿Continuar?")) return;
+    const before = draftSnapshot();
     const { error } = await sb.from("draft_passes").insert({ season_id: state.season.id, player_id: st.playerId, draft: st.key });
     if (error) showToast("No se pudo registrar el pase.");
     await loadSeasonData(); render();
+    if (!error) await notifyDraftAdvance(before, st.playerId);
   }
 
   function marketResultsHtml() {
@@ -3741,6 +4068,7 @@
     if (!marketAllowsTrades(st)) { showToast("El Mercado está cerrado."); buyCardId = null; render(); return; }
     if (m.rat > ratCap()) { showToast(m.name + " se desbloquea al terminar la " + unlockLabel(m.rat) + "."); buyCardId = null; render(); return; }
     const teamId = buyTeamId;
+    const before = draftSnapshot();
     buyCardId = null; buyTeamId = null;
     const { error } = await sb.from("team_purchases").insert({
       season_id: state.season.id, player_id: teamId, card_id: m.id, card_name: m.name,
@@ -3752,6 +4080,12 @@
       : "No se pudo registrar la compra.");
     else showToast(m.name + " → " + playerName(teamId) + " (" + fcPlain(m.price) + ")");
     await loadSeasonData(); render();
+    if (!error) {
+      const pu = (state.purchases || []).filter(x => x.card_id === m.id && x.player_id === teamId && !x.sold_at).pop();
+      await queueNotifs([{ key: "buy:" + (pu ? pu.id : m.id + ":" + Date.now()), url: "./?m=transacciones", image: cardImage(m.id),
+        title: "💸 " + playerName(teamId) + " compró a " + m.name, body: m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price) + " · " + (before.phase === "draft" ? before.title : "Mercado abierto") }]);
+      await notifyDraftAdvance(before, teamId);
+    }
   }
   const SALE_RATE = 0.97;
   function saleAmount(price) { return Math.round(price * SALE_RATE * 100) / 100; }
@@ -3766,6 +4100,8 @@
     if (error) showToast("No se pudo registrar la venta.");
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
     await loadSeasonData(); render();
+    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", image: cardImage(pu.card_id),
+      title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado." }]);
   }
   async function undoPurchase(purchaseId) {
     if (!isAdmin) return;
@@ -3883,6 +4219,7 @@
       case "sell-player": sellPlayer(el.dataset.purchase); break;
       case "draft-pass": passDraftTurn(); break;
       case "end-fast-track": endFastTrack(); break;
+      case "toggle-push": togglePush(); break;
       case "open-help": helpOpen = true; render(); break;
       case "close-help": helpOpen = false; render(); break;
       case "download-backup": downloadBackup(); break;
