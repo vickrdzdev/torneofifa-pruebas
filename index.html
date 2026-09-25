@@ -598,7 +598,7 @@
     document.title = "[PRUEBAS] " + document.title;
     const banner = document.createElement("div");
     banner.className = "test-banner";
-    banner.innerHTML = 'MODO PRUEBAS<span class="tb-long"> · base de datos de pruebas (no afecta el torneo real)</span>';
+    banner.textContent = "MODO PRUEBAS";
     document.body.insertBefore(banner, document.body.firstChild);
   }
 
