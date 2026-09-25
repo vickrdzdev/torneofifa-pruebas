@@ -3,7 +3,7 @@
 // solo si no hay conexión usa la última copia guardada de la página.
 // No toca las llamadas a Supabase ni a otros dominios (los datos del torneo
 // siempre requieren conexión).
-const CACHE = "torneofifa-v2";
+const CACHE = "torneofifa-v3";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -40,8 +40,9 @@ self.addEventListener("push", (e) => {
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: "Torneo FIFA", body: e.data ? e.data.text() : "" }; }
   e.waitUntil(self.registration.showNotification(d.title || "Torneo FIFA", {
     body: d.body || "",
-    icon: "icons/icon-192.png",
-    badge: "icons/icon-48.png",
+    // Sin "icon" grande a la derecha: deja más espacio al texto. El badge es
+    // la silueta blanca del balón que Android muestra en la barra de estado.
+    badge: "icons/badge-96.png",
     image: d.image || undefined,
     tag: d.tag || undefined,
     data: { url: d.url || "./" }
