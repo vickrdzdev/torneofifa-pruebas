@@ -325,6 +325,7 @@
   .tx-badge.tx-buy { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
   .tx-badge.tx-sell { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .tx-badge.tx-pass { background: var(--surface-2); color: var(--text-muted); }
+  .tx-badge.tx-pen { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
   .mini-btn { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 7px; font-weight: 700; font-size: 12.5px; padding: 5px 10px; }
   .mini-btn:hover { background: var(--accent-strong); }
   .mini-btn.danger { background: transparent; color: var(--red); border: 1px solid var(--line); padding: 3px 8px; }
@@ -373,6 +374,31 @@
   table.h2h td.none { color: var(--text-muted); }
   table.h2h td.pos { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
   table.h2h td.neg { background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
+
+  /* ---------- penalizaciones ---------- */
+  .pen-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; }
+  .pen-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+  .pen-form .text-input { padding: 9px 11px; font-size: 14px; }
+  .pen-form .btn-primary { font-size: 16px; padding: 10px 16px; }
+  .pen-preview { grid-column: 1 / -1; font-size: 13.5px; margin: 0; }
+  .pen-neg { color: var(--red); font-weight: 700; white-space: nowrap; }
+  .pen-ok { color: var(--text-muted); }
+  .pen-sub { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 500; margin-top: 2px; }
+  .pen-count { font-weight: 700; font-size: 15px; }
+  table.pen-hist td { text-align: left; vertical-align: top; }
+  table.pen-hist td.c { text-align: center; }
+  table.pen-hist .pen-neg { white-space: normal; }
+  table.pen-hist td.what { min-width: 180px; }
+  table.pen-hist tr.waived td { opacity: .55; }
+  table.pen-hist tr.waived td.act { opacity: 1; }
+  table.pen-hist tr.waived .pen-what { text-decoration: line-through; }
+  .pen-tag { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: var(--surface-2); color: var(--text-muted); margin-left: 4px; white-space: nowrap; }
+  .pen-mark { color: var(--red); font-size: 11px; font-weight: 700; margin-left: 3px; }
+  .pen-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .pen-rules .card { padding: 14px 16px; font-size: 13.5px; line-height: 1.55; }
+  .pen-rules h3 { margin: 0 0 6px; font-family: var(--font-display); font-size: 18px; }
+  .pen-rules ol { margin: 0; padding-left: 20px; }
+  .draft-banner .pen-note { flex-basis: 100%; color: var(--red); font-size: 13px; }
 
   /* ---------- alineaciones ---------- */
   .lu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
@@ -560,6 +586,9 @@
   let luSaving = null;
   let accDrafts = {};
   let statsTab = "general";   // "general" | "resumen" | "h2h" | "recompensas" | "palmares"
+  let penPlayer = "";         // filtro del historial de Penalizaciones
+  let penForm = { player: "", jornada: "", kind: "consola", note: "" };
+  let penSaving = false;
   let statsFilter = "all";    // "all" | "group" | "ko"
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
@@ -899,8 +928,14 @@
       lineups = res.data || [];
     } catch (e) { lineups = []; }
 
+    let penalties = [];
+    try {
+      const res = await sb.from("penalties").select("*").eq("season_id", season.id).order("created_at");
+      penalties = res.data || [];
+    } catch (e) { penalties = []; }
+
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups };
+    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, penalties };
   }
 
   function newId() {
@@ -1170,6 +1205,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "team_purchases" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "draft_passes" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "lineups" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "penalties" }, scheduleReload)
       .subscribe();
   }
 
@@ -1571,8 +1607,9 @@
   // conservan su orden. En la J0 el empate se define por el lugar en su fase regular.
   function generalTable() {
     let order = state.players.map(p => p.id);
-    const total = {}, perJ = {};
-    order.forEach(id => { total[id] = 0; perJ[id] = {}; });
+    const total = {}, perJ = {}, penJ = {};
+    order.forEach(id => { total[id] = 0; perJ[id] = {}; penJ[id] = {}; });
+    const pen = penaltiesByJornada();
     const labels = [];
     const snapshots = {};
     let prevRank = null;
@@ -1592,8 +1629,11 @@
       prevRank = pos;
       r.rows.forEach(row => {
         if (!(row.playerId in total)) return;
-        total[row.playerId] += row.total;
-        perJ[row.playerId][j.label] = row.total;
+        // Las sanciones restan en la Jornada de la falta (puede quedar en negativo).
+        const minus = (pen[j.id] && pen[j.id][row.playerId] || {}).pts || 0;
+        total[row.playerId] += row.total - minus;
+        perJ[row.playerId][j.label] = row.total - minus;
+        if (minus) penJ[row.playerId][j.label] = minus;
       });
       order = order.slice().sort((a, b) => total[b] - total[a] || before[a] - before[b] || pos[a] - pos[b]);
       const rank = {}; order.forEach((id, i) => rank[id] = i + 1);
@@ -1602,7 +1642,7 @@
     return {
       labels, snapshots,
       rows: order.map((id, i) => ({
-        playerId: id, rank: i + 1, total: total[id], perJ: perJ[id],
+        playerId: id, rank: i + 1, total: total[id], perJ: perJ[id], penJ: penJ[id],
         move: labels.length > 1 ? prevRank[id] - i : 0
       }))
     };
@@ -1677,6 +1717,13 @@
     order.forEach(id => { have[id] = 0; need[id] = 0; });
     (state.purchases || []).forEach(pu => { if (pu.draft === key && pu.player_id in have) have[pu.player_id]++; });
     (state.passes || []).forEach(ps => { if (ps.draft === key && ps.player_id in have) have[ps.player_id]++; });
+    // Turnos perdidos por sanción: cuentan como pases automáticos de sus primeros turnos.
+    const lost = {};
+    const penJ = key === "initial" ? state.jornadas[0] : state.jornadas.find(j => j.label === key);
+    const penMap = penJ ? (penaltiesByJornada()[penJ.id] || {}) : {};
+    Object.entries(penMap).forEach(([id, x]) => {
+      if (x.picks && id in have) { lost[id] = Math.min(x.picks, rounds); have[id] += lost[id]; }
+    });
     const picks = Object.values(have).reduce((a, b) => a + Math.min(b, rounds), 0);
     if (picks >= total) return null;
     let turn = -1, next = null;
@@ -1688,7 +1735,7 @@
         else { next = id; break; }
       }
     }
-    return { round: Math.floor(turn / n) + 1, rounds, pick: picks + 1, total, playerId: turnAt(turn), nextId: next };
+    return { round: Math.floor(turn / n) + 1, rounds, pick: picks + 1, total, playerId: turnAt(turn), nextId: next, lost };
   }
 
   // Cierre del Mercado: domingo 11:59 pm (centro de México, UTC-6) previo a la
@@ -1794,13 +1841,16 @@
     if (!done.length) {
       html += `<div class="card empty-note">Todavía no hay Jornadas con la fase de grupos terminada. Los puntos aparecen aquí en cuanto se capturen todos los partidos de una Jornada.</div>`;
     }
+    const pen = penaltiesByJornada();
     done.forEach(({ j, r }) => {
+      const pj = pen[j.id] || {};
+      const hasPen = Object.values(pj).some(x => x.pts);
       html += `<div class="rewards-block">
         <p class="stage-title">${j.label}${r.finalDone ? "" : ` <span class="sub-note">· bonos de la Final y FC pendientes</span>`}</p>
         <div class="table-scroll">
           <table class="standings compact">
             <thead><tr>
-              <th style="text-align:left">Player</th><th>Lugar</th><th>Pts</th><th title="Campeón">Camp.</th><th title="Subcampeón">Subc.</th><th>Total</th><th>FC (${FC_SYM})</th>
+              <th style="text-align:left">Player</th><th>Lugar</th><th>Pts</th><th title="Campeón">Camp.</th><th title="Subcampeón">Subc.</th>${hasPen ? `<th title="Puntos restados por sanciones">Sanción</th>` : ""}<th>Total</th><th>FC (${FC_SYM})</th>
             </tr></thead>
             <tbody>${r.rows.map(row => `
               <tr class="${row.place == null ? "absent" : ""}">
@@ -1809,7 +1859,8 @@
                 <td>${row.base}</td>
                 <td>${row.champion ? `🏆+${row.champion}` : ""}</td>
                 <td>${row.runnerUp ? `🥈+${row.runnerUp}` : ""}</td>
-                <td class="pts-cell">${row.total}</td>
+                ${hasPen ? `<td>${pj[row.playerId] && pj[row.playerId].pts ? `<span class="pen-neg">−${pj[row.playerId].pts}</span>` : ""}</td>` : ""}
+                <td class="pts-cell">${row.total - ((pj[row.playerId] || {}).pts || 0)}</td>
                 <td class="fc-cell">${(fc => fc == null ? "–" : fcFormatted(fc))(fcOf(j, r, row))}</td>
               </tr>`).join("")}
             </tbody>
@@ -1840,12 +1891,13 @@
               <td class="pos-cell">${r.rank}</td>
               <td>${arrow(r.move)}</td>
               <td class="name-cell">${escapeHtml(playerName(r.playerId))}</td>
-              ${g.labels.map(l => `<td>${r.perJ[l] != null ? r.perJ[l] : "–"}</td>`).join("")}
+              ${g.labels.map(l => `<td>${r.perJ[l] != null ? r.perJ[l] : "–"}${r.penJ[l] ? `<span class="pen-mark" title="Incluye −${r.penJ[l]} por sanción">−${r.penJ[l]}</span>` : ""}</td>`).join("")}
               <td class="pts-cell">${r.total}</td>
             </tr>`).join("")}
           </tbody>
         </table>
       </div>
+      ${g.rows.some(r => Object.keys(r.penJ).length) ? `<p class="qual-note"><span class="pen-mark" style="margin:0">−N</span> = puntos restados por sanciones en esa Jornada (ya descontados; ver 🚨 Penalizaciones).</p>` : ""}
       <p class="qual-note">Las flechas indican el movimiento respecto a la Jornada anterior. En empate de puntos, quien venía abajo y alcanza a otro player se coloca arriba de él (en la J0, el empate lo define el lugar en su fase regular).</p>
       ${generalChartHtml(g)}
     </div>`;
@@ -1980,6 +2032,10 @@
         <h4>Alineaciones</h4>
         <p>Para cada Jornada de la J1 a la J11, cada player sube en 📋 Alineaciones la imagen de sus titulares, la de su banca y el código de su alineación. El límite es el <strong>martes a las 11:59 pm</strong> (hora del centro de México) inmediatamente anterior a la fecha de la Jornada; la J0 no lleva alineación.</p>
         <p>Antes del límite se puede cambiar cuantas veces se quiera. Después del límite, quien ya la había entregado ya no puede cambiarla, y quien no la había entregado todavía puede subirla, pero queda marcada como <strong>tarde</strong>. Todos pueden ver las alineaciones de todos.</p>
+        <h4>Penalizaciones</h4>
+        <p>Hay tres tipos de falta y cada uno se cuenta por separado: <strong>consola desactualizada</strong> (quien lleva consola no tiene los equipos al día), <strong>alineación</strong> (no subirla completa a tiempo) e <strong>impuntualidad</strong> (llegar después de las 9:15 pm en horario nocturno o de las 5:15 pm en vespertino).</p>
+        <p>Consola: 1ª falta −2 pts y pierde su 1er turno del Draft; 2ª en adelante −3 pts y pierde sus 2 turnos. Alineación: la 1ª es tolerancia; 2ª −2 pts y 1 turno; 3ª en adelante −3 pts y 2 turnos. Impuntualidad: la 1ª y 2ª son tolerancia; 3ª −2 pts y 1 turno; 4ª en adelante −3 pts y 2 turnos.</p>
+        <p>Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y cuentan para las FIFA Coins. Los turnos se pierden en el Draft que sigue a esa Jornada y se saltan solos; el Mercado abierto se usa normalmente. El detalle está en 🚨 Penalizaciones.</p>
         <h4>Tus datos</h4>
         <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Solo el admin edita el torneo; cada player puede iniciar sesión para subir su alineación, y cualquiera puede ver todo en vivo sin iniciar sesión.</p>
         <div class="modal-close-row"><button class="btn-secondary" data-action="close-help">Cerrar</button></div>
@@ -2026,7 +2082,8 @@
     { id: "mercado", icon: "🛒", label: "Mercado" },
     { id: "transacciones", icon: "🧾", label: "Transacciones" },
     { id: "alineaciones", icon: "📋", label: "Alineaciones" },
-    { id: "estadisticas", icon: "📊", label: "Estadísticas" }
+    { id: "estadisticas", icon: "📊", label: "Estadísticas" },
+    { id: "penalizaciones", icon: "🚨", label: "Penalizaciones" }
   ];
   function renderDashboard() {
     const app = $("#app");
@@ -2037,6 +2094,8 @@
       body = renderMarketModule(); wide = true;
     } else if (activeModule === "transacciones") {
       body = renderTransactionsModule();
+    } else if (activeModule === "penalizaciones") {
+      body = renderPenaltiesModule();
     } else if (activeModule === "estadisticas") {
       ({ tabs: topTabs, body } = renderStatsModule());
     } else if (activeModule === "alineaciones") {
@@ -2073,6 +2132,233 @@
       ${buyModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
+  }
+
+  /* ============================== penalizaciones ============================== */
+  // Cada tipo de falta lleva su propio conteo. `free` = faltas de tolerancia
+  // sin sanción; después: 1ª sancionada −2 pts y 1 turno, siguientes −3 y 2.
+  const PEN_KINDS = {
+    consola: { icon: "🎮", label: "Consola desactualizada", short: "Consola", free: 0 },
+    alineacion: { icon: "📋", label: "Alineación", short: "Alineación", free: 1 },
+    retardo: { icon: "⏰", label: "Impuntualidad", short: "Retardos", free: 2 }
+  };
+  const PEN_STEPS = [{ pts: 2, picks: 1 }, { pts: 3, picks: 2 }];
+  function sanctionFor(kind, n) {
+    const k = n - PEN_KINDS[kind].free;
+    if (k <= 0) return { pts: 0, picks: 0, tolerance: true };
+    return PEN_STEPS[Math.min(k, PEN_STEPS.length) - 1];
+  }
+  function draftAfter(j) {
+    const idx = state.jornadas.indexOf(j);
+    if (idx === 0) return "Draft inicial";
+    if (idx >= 1 && idx <= state.jornadas.length - 2) return "Draft de la " + j.label;
+    return null; // la última Jornada no tiene Draft después
+  }
+  function sanctionText(sc, j) {
+    if (sc.tolerance) return "tolerancia, sin sanción";
+    const d = draftAfter(j);
+    const turns = d ? " y pierde " + (sc.picks === 1 ? "su 1er turno" : "sus " + sc.picks + " turnos") + " del " + d : " (no hay Draft después)";
+    return "−" + sc.pts + " pts en la Tabla General" + turns;
+  }
+  function autoLineupReason(j, playerId) {
+    const l = lineupOf(j.id, playerId);
+    if (l && l.submitted_at && !l.late) return null;
+    if (l && l.submitted_at) return "la subió tarde";
+    if (l && (l.code || l.starters_path || l.bench_path)) return "la dejó incompleta";
+    return "no la subió";
+  }
+  // Todas las faltas de la temporada, numeradas por player y tipo en orden de Jornada.
+  // Las de alineación se detectan solas al cerrar el plazo; el admin puede
+  // quitarlas (fila waived) o registrar otras a mano (p. ej. código equivocado).
+  function penaltyFaults() {
+    const rows = state.penalties || [];
+    const jIdx = {}; state.jornadas.forEach((j, i) => jIdx[j.id] = i);
+    const faults = [], waived = [];
+    rows.filter(r => !r.waived && jIdx[r.jornada_id] != null).forEach(r => faults.push({
+      key: r.id, row: r, auto: false, kind: r.kind, playerId: r.player_id,
+      jornada: state.jornadas[jIdx[r.jornada_id]], note: r.note || "", at: r.created_at
+    }));
+    const now = Date.now();
+    state.jornadas.forEach(j => {
+      if (j.jornada_number < 1) return;
+      const dl = lineupDeadline(j.playDate);
+      if (!dl || now < dl.getTime()) return;
+      state.players.forEach(p => {
+        // Quien faltó a la Jornada no juega, así que no se le exige alineación.
+        if (j.matches.length && !j.activeIds.includes(p.id)) return;
+        const reason = autoLineupReason(j, p.id);
+        if (!reason) return;
+        if (rows.some(r => r.kind === "alineacion" && !r.waived && r.jornada_id === j.id && r.player_id === p.id)) return;
+        const f = { key: "auto:" + j.id + ":" + p.id, auto: true, kind: "alineacion", playerId: p.id, jornada: j, note: "Automática: " + reason, at: dl.toISOString() };
+        const w = rows.find(r => r.kind === "alineacion" && r.waived && r.jornada_id === j.id && r.player_id === p.id);
+        if (w) waived.push(Object.assign(f, { row: w })); else faults.push(f);
+      });
+    });
+    faults.sort((a, b) => jIdx[a.jornada.id] - jIdx[b.jornada.id] || (a.at || "").localeCompare(b.at || ""));
+    const count = {};
+    faults.forEach(f => {
+      const k = f.playerId + "|" + f.kind;
+      count[k] = (count[k] || 0) + 1;
+      f.n = count[k];
+      f.sanction = sanctionFor(f.kind, f.n);
+    });
+    return { active: faults, waived, count };
+  }
+  // Sanción total por Jornada y player: puntos sumados, turnos (máx. 2).
+  function penaltiesByJornada() {
+    const out = {};
+    penaltyFaults().active.forEach(f => {
+      const m = out[f.jornada.id] = out[f.jornada.id] || {};
+      const x = m[f.playerId] = m[f.playerId] || { pts: 0, picks: 0 };
+      x.pts += f.sanction.pts;
+      x.picks = Math.min(JORNADA_DRAFT_ROUNDS, x.picks + f.sanction.picks);
+    });
+    return out;
+  }
+  function nextSanctionText(kind, done) {
+    const sc = sanctionFor(kind, done + 1);
+    if (sc.tolerance) {
+      const left = PEN_KINDS[kind].free - done;
+      return left === 1 ? "Le queda 1 sin sanción" : "Le quedan " + left + " sin sanción";
+    }
+    return "Próxima: −" + sc.pts + " pts y " + sc.picks + (sc.picks === 1 ? " turno" : " turnos");
+  }
+  function defaultPenJornada() {
+    const played = state.jornadas.filter(j => j.matches.length);
+    return (played.length ? played[played.length - 1] : state.jornadas[0]).id;
+  }
+  function renderPenaltiesModule() {
+    const pf = penaltyFaults();
+    const counted = new Set(generalTable().labels);
+    // Resumen por player
+    const summary = state.players.map(p => {
+      const mine = pf.active.filter(f => f.playerId === p.id);
+      const byKind = {}; Object.keys(PEN_KINDS).forEach(k => byKind[k] = mine.filter(f => f.kind === k).length);
+      return { p, byKind, pts: mine.reduce((a, f) => a + f.sanction.pts, 0), picks: mine.reduce((a, f) => a + f.sanction.picks, 0) };
+    });
+    const summaryHtml = `
+      <div class="table-scroll">
+        <table class="standings compact">
+          <thead><tr><th style="text-align:left">Player</th>${Object.values(PEN_KINDS).map(k => `<th title="${k.label}">${k.icon} ${k.short}</th>`).join("")}<th>Pts restados</th><th>Turnos perdidos</th></tr></thead>
+          <tbody>${summary.map(s => `<tr>
+            <td class="name-cell">${escapeHtml(s.p.name)}</td>
+            ${Object.keys(PEN_KINDS).map(k => `<td><span class="pen-count">${s.byKind[k]}</span><span class="pen-sub">${nextSanctionText(k, s.byKind[k])}</span></td>`).join("")}
+            <td>${s.pts ? `<span class="pen-neg">−${s.pts}</span>` : `<span class="pen-ok">0</span>`}</td>
+            <td>${s.picks ? `<span class="pen-neg">${s.picks}</span>` : `<span class="pen-ok">0</span>`}</td>
+          </tr>`).join("")}</tbody>
+        </table>
+      </div>`;
+
+    // Formulario (admin)
+    let formHtml = "";
+    if (isAdmin) {
+      if (!penForm.player || !state.players.some(p => p.id === penForm.player)) penForm.player = state.players[0].id;
+      if (!penForm.jornada || !state.jornadas.some(j => j.id === penForm.jornada)) penForm.jornada = defaultPenJornada();
+      const j = state.jornadas.find(x => x.id === penForm.jornada);
+      // Número de falta que le tocaría (contando las de Jornadas anteriores o iguales).
+      const jIdx = state.jornadas.indexOf(j);
+      const n = pf.active.filter(f => f.playerId === penForm.player && f.kind === penForm.kind && state.jornadas.indexOf(f.jornada) <= jIdx).length + 1;
+      const later = pf.active.some(f => f.playerId === penForm.player && f.kind === penForm.kind && state.jornadas.indexOf(f.jornada) > jIdx);
+      const sc = sanctionFor(penForm.kind, n);
+      formHtml = `
+        <div class="card" style="padding:16px; margin-bottom:18px;">
+          <h3 style="margin:0 0 12px; font-family:var(--font-display); font-size:20px;">Registrar falta</h3>
+          <div class="pen-form">
+            <label>Player<select class="text-input" id="pen-player">${state.players.map(p => `<option value="${p.id}" ${penForm.player === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>
+            <label>Jornada<select class="text-input" id="pen-jornada">${state.jornadas.map(x => `<option value="${x.id}" ${penForm.jornada === x.id ? "selected" : ""}>${escapeHtml(x.label)}</option>`).join("")}</select></label>
+            <label>Tipo<select class="text-input" id="pen-kind">${Object.entries(PEN_KINDS).map(([k, v]) => `<option value="${k}" ${penForm.kind === k ? "selected" : ""}>${v.icon} ${v.label}</option>`).join("")}</select></label>
+            <label>Nota (opcional)<input class="text-input" id="pen-note" type="text" placeholder="Ej. llegó 9:40 pm" value="${escapeHtml(penForm.note)}"></label>
+            <p class="pen-preview">Sería su <strong>${n}ª falta</strong> de ${PEN_KINDS[penForm.kind].label.toLowerCase()}: ${sc.tolerance ? `<span class="pen-ok">tolerancia, sin sanción.</span>` : `<span class="pen-neg">${escapeHtml(sanctionText(sc, j))}.</span>`}${later ? ` <span class="muted">(Ya tiene faltas de este tipo en Jornadas posteriores; se recalcula su numeración.)</span>` : ""}${penForm.kind === "alineacion" ? ` <span class="muted">Las alineaciones tarde o incompletas ya se registran solas; usa esta opción para otros errores.</span>` : ""}</p>
+            <button class="btn-primary" data-action="add-penalty" ${penSaving ? "disabled" : ""} style="grid-column: 1 / -1;">${penSaving ? "Guardando…" : "Registrar falta"}</button>
+          </div>
+        </div>`;
+    }
+
+    // Historial
+    const hist = pf.active.map(f => Object.assign({ waivedRow: false }, f))
+      .concat(pf.waived.map(f => Object.assign({ waivedRow: true }, f)))
+      .filter(f => !penPlayer || f.playerId === penPlayer)
+      .sort((a, b) => state.jornadas.indexOf(b.jornada) - state.jornadas.indexOf(a.jornada) || (b.at || "").localeCompare(a.at || ""));
+    const action = f => {
+      if (!isAdmin) return "";
+      if (f.waivedRow) return `<button class="mini-btn" data-action="restore-penalty" data-id="${f.row.id}">Restaurar</button>`;
+      if (f.auto) return `<button class="mini-btn danger" data-action="waive-penalty" data-j="${f.jornada.id}" data-p="${f.playerId}">Quitar</button>`;
+      return `<button class="mini-btn danger" data-action="delete-penalty" data-id="${f.row.id}">Borrar</button>`;
+    };
+    const histHtml = hist.length ? `
+      <div class="table-scroll">
+        <table class="standings compact pen-hist">
+          <thead><tr><th>Jornada</th><th style="text-align:left">Player</th><th style="text-align:left">Falta</th><th style="text-align:left">Sanción</th>${isAdmin ? "<th></th>" : ""}</tr></thead>
+          <tbody>${hist.map(f => `
+            <tr class="${f.waivedRow ? "waived" : ""}">
+              <td class="c"><strong>${escapeHtml(f.jornada.label)}</strong></td>
+              <td><strong>${escapeHtml(playerName(f.playerId))}</strong></td>
+              <td class="what"><span class="pen-what">${PEN_KINDS[f.kind].icon} ${PEN_KINDS[f.kind].label}${f.waivedRow ? "" : ` · ${f.n}ª`}</span>${f.auto ? `<span class="pen-tag">auto</span>` : ""}${f.note ? `<span class="pen-sub">${escapeHtml(f.note)}</span>` : ""}</td>
+              <td>${f.waivedRow ? `<span class="pen-ok">Quitada por el admin</span>`
+                : f.sanction.tolerance ? `<span class="pen-ok">Tolerancia, sin sanción</span>`
+                : `<span class="pen-neg">${escapeHtml(sanctionText(f.sanction, f.jornada))}</span>${counted.has(f.jornada.label) ? "" : `<span class="pen-sub">Los puntos se restan cuando termine la fase de grupos de la ${escapeHtml(f.jornada.label)}.</span>`}`}</td>
+              ${isAdmin ? `<td class="act c">${action(f)}</td>` : ""}
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : `<div class="empty-state">${penPlayer ? "Este player no tiene faltas." : "Sin faltas registradas. 🙌"}</div>`;
+
+    const rule = (k, lines) => `<div class="card"><h3>${PEN_KINDS[k].icon} ${PEN_KINDS[k].label}</h3><ol>${lines.map(l => `<li>${l}</li>`).join("")}</ol></div>`;
+    const S1 = "−2 pts y pierde su 1er turno del Draft", S2 = "−3 pts y pierde sus 2 turnos del Draft";
+    const rulesHtml = `<div class="pen-rules">
+        ${rule("consola", [S1, S2 + " (y así en adelante)"])}
+        ${rule("alineacion", ["Tolerancia, sin sanción", S1, S2 + " (y así en adelante)"])}
+        ${rule("retardo", ["Tolerancia, sin sanción", "Tolerancia, sin sanción", S1, S2 + " (y así en adelante)"])}
+      </div>`;
+
+    return `
+      <div class="section">
+        <div class="section-head"><h2>Penalizaciones</h2><span class="sub">${pf.active.length} falta${pf.active.length === 1 ? "" : "s"} en la temporada</span></div>
+        ${formHtml}
+        ${summaryHtml}
+      </div>
+      <div class="section">
+        <div class="section-head"><h2>Historial</h2>
+          <select class="text-input" id="pen-filter" style="flex:0 0 auto; padding:7px 10px; font-size:14px;">
+            <option value="">Todos los players</option>
+            ${state.players.map(p => `<option value="${p.id}" ${penPlayer === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
+          </select>
+        </div>
+        ${histHtml}
+      </div>
+      <div class="section">
+        <div class="section-head"><h2>Reglas</h2></div>
+        ${rulesHtml}
+        <p class="st-foot">Cada tipo de falta se cuenta por separado. Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y afectan las FIFA Coins de esa Jornada. Los turnos se pierden en el Draft que sigue a esa Jornada (en la J0, el Draft inicial; la J11 no tiene Draft) y el Mercado abierto se puede usar normalmente. Si en una misma Jornada se juntan varias faltas, los puntos se suman y se pierden como máximo 2 turnos. Las alineaciones tarde, incompletas o no subidas cuentan solas al cerrar el plazo (salvo a quien faltó a la Jornada).</p>
+      </div>`;
+  }
+  async function addPenalty() {
+    if (!isAdmin || penSaving) return;
+    penSaving = true; render();
+    const { error } = await sb.from("penalties").insert({
+      season_id: state.season.id, jornada_id: penForm.jornada, player_id: penForm.player,
+      kind: penForm.kind, note: penForm.note.trim() || null
+    });
+    penSaving = false;
+    if (error) { showToast("No se pudo registrar la falta."); render(); return; }
+    const who = playerName(penForm.player);
+    penForm.note = "";
+    await loadSeasonData(); render();
+    showToast("Falta registrada a " + who + ".");
+  }
+  async function waivePenalty(jornadaId, playerId) {
+    if (!isAdmin) return;
+    if (!confirm("¿Quitar esta falta de alineación a " + playerName(playerId) + "? Se recalculan sus sanciones.")) return;
+    const { error } = await sb.from("penalties").insert({ season_id: state.season.id, jornada_id: jornadaId, player_id: playerId, kind: "alineacion", waived: true, note: "Quitada por el admin" });
+    if (error) showToast("No se pudo quitar la falta.");
+    await loadSeasonData(); render();
+  }
+  async function deletePenaltyRow(id, ask) {
+    if (!isAdmin) return;
+    if (ask && !confirm(ask)) return;
+    const { error } = await sb.from("penalties").delete().eq("id", id);
+    if (error) showToast("No se pudo guardar el cambio.");
+    await loadSeasonData(); render();
   }
 
   /* ============================== estadísticas ============================== */
@@ -2571,7 +2857,8 @@
     bono_jornada: { label: "Bono de Jornada", cls: "tx-bonus" },
     compra: { label: "Compra", cls: "tx-buy" },
     venta: { label: "Venta", cls: "tx-sell" },
-    pase: { label: "Pase", cls: "tx-pass" }
+    pase: { label: "Pase", cls: "tx-pass" },
+    sancion: { label: "Sanción", cls: "tx-pen" }
   };
   function draftLabel(key) {
     if (!key) return "Mercado abierto";
@@ -2599,6 +2886,10 @@
       if (pu.sold_at) tx.push({ at: pu.sold_at, seq: 1000, playerId: pu.player_id, kind: "venta", detail: "vendió a " + pu.card_name + " (97% de " + fcPlain(pu.price) + ")", amount: Number(pu.sale_amount) || 0 });
     });
     (state.passes || []).forEach(ps => tx.push({ at: ps.created_at, seq: 1000, playerId: ps.player_id, kind: "pase", detail: "pasó su turno · " + draftLabel(ps.draft), amount: 0 }));
+    penaltyFaults().active.filter(f => f.sanction.pts || f.sanction.picks).forEach(f => tx.push({
+      at: f.at, seq: 1000, playerId: f.playerId, kind: "sancion", amount: 0,
+      detail: PEN_KINDS[f.kind].label.toLowerCase() + " (" + f.n + "ª falta, " + f.jornada.label + "): " + sanctionText(f.sanction, f.jornada)
+    }));
     tx.sort((a, b) => (a.at || "").localeCompare(b.at || "") || a.seq - b.seq);
     const bal = {};
     tx.forEach(t => { bal[t.playerId] = Math.round(((bal[t.playerId] || 0) + t.amount) * 100) / 100; t.balance = bal[t.playerId]; });
@@ -2682,6 +2973,7 @@
       <span class="draft-turn">Turno de: <strong>${escapeHtml(playerName(st.playerId))}</strong> <span class="muted">(${fcFormatted(fin[st.playerId].balance)} · ${fin[st.playerId].count}/${SQUAD_SIZE})</span></span>
       ${st.nextId ? `<span class="muted">Sigue: ${escapeHtml(playerName(st.nextId))}</span>` : ""}
       ${st.canPass && isAdmin ? `<button class="btn-secondary pass-btn" data-action="draft-pass">Pasar turno</button>` : ""}
+      ${st.lost && Object.keys(st.lost).length ? `<span class="pen-note">🚨 Sanción: ${Object.entries(st.lost).map(([id, n]) => `<strong>${escapeHtml(playerName(id))}</strong> pierde ${n === 1 ? "su 1er turno" : "sus " + n + " primeros turnos"}`).join(" · ")} de este Draft (se saltan solos).</span>` : ""}
     </div>`;
   }
   async function passDraftTurn() {
@@ -2888,7 +3180,7 @@
     const tabsScroll = tabsEl ? tabsEl.scrollLeft : 0;
     const kept = captureScoreInputs();
     const a = document.activeElement;
-    const focusId = a && a.id && /^(market-search$|lu-code-|acc-)/.test(a.id) ? a.id : null;
+    const focusId = a && a.id && /^(market-search$|lu-code-|acc-|pen-note$)/.test(a.id) ? a.id : null;
     const caret = focusId ? a.selectionStart : null;
     renderInner();
     restoreScoreInputs(kept);
@@ -2972,6 +3264,10 @@
       case "close-login": loginOpen = false; loginError = ""; render(); break;
       case "submit-login": submitLogin(); break;
       case "admin-logout": adminLogout(); break;
+      case "add-penalty": addPenalty(); break;
+      case "waive-penalty": waivePenalty(el.dataset.j, el.dataset.p); break;
+      case "delete-penalty": deletePenaltyRow(el.dataset.id, "¿Borrar esta falta? Se recalculan las sanciones."); break;
+      case "restore-penalty": deletePenaltyRow(el.dataset.id, null); break;
       case "set-stats-tab": statsTab = el.dataset.tab; render(); break;
       case "set-stats-filter": statsFilter = el.dataset.f; render(); break;
       case "set-lu-tab": luTab = el.dataset.tab; render(); break;
@@ -3026,6 +3322,7 @@
       return;
     }
     if (e.target.classList && e.target.classList.contains("acc-input")) { accDrafts[e.target.dataset.p] = e.target.value; return; }
+    if (e.target.id === "pen-note") { penForm.note = e.target.value; return; }
     if (e.target.id !== "market-search") return;
     marketQuery = e.target.value;
     clearTimeout(marketSearchTimer);
@@ -3035,6 +3332,10 @@
     if (e.target.dataset && e.target.dataset.luFile) { pickLineupFile(e.target); return; }
     if (e.target.classList && e.target.classList.contains("jdate-input")) { setJornadaDate(e.target.dataset.j, e.target.value); return; }
     if (e.target.id === "tx-player") { txPlayer = e.target.value; render(); return; }
+    if (e.target.id === "pen-filter") { penPlayer = e.target.value; render(); return; }
+    if (e.target.id === "pen-player") { penForm.player = e.target.value; render(); return; }
+    if (e.target.id === "pen-jornada") { penForm.jornada = e.target.value; render(); return; }
+    if (e.target.id === "pen-kind") { penForm.kind = e.target.value; render(); return; }
     if (e.target.id === "tx-kind") { txKind = e.target.value; render(); return; }
     if (e.target.id === "market-pos") { marketPos = e.target.value; marketPage = 0; refreshMarketResults(); return; }
     if (e.target.id === "market-available") { marketOnlyAvailable = e.target.checked; marketPage = 0; refreshMarketResults(); return; }
