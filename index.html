@@ -432,6 +432,7 @@
   .acc-row .text-input { min-width: 200px; padding: 8px 10px; font-size: 14px; }
   .jdate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; font-size: 14px; }
   .jdate-row label { font-weight: 600; }
+  .console-pair { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; }
   .jdate-input { flex: 0 0 auto; padding: 7px 10px; font-size: 14px; }
   td.actions-cell { white-space: nowrap; }
   .mini-btn.sell { background: var(--blue); color: #fff; margin-right: 4px; }
@@ -902,6 +903,7 @@
       }
       const jornada = {
         id: jr.id, jornada_number: jr.jornada_number, label: jr.label, playDate: jr.play_date || null,
+        console1Id: jr.console1_id || null, console2Id: jr.console2_id || null,
         updatedAt: allM.reduce((mx, m) => (m.created_at && m.created_at > mx ? m.created_at : mx), ""),
         activeIds, matches: groupM.map(mapMatchRow), playoff
       };
@@ -2767,8 +2769,27 @@
         <label for="jdate-${j.id}">📅 Fecha de la ${j.label}:</label>
         <input type="date" class="text-input jdate-input" id="jdate-${j.id}" data-j="${j.id}" value="${j.playDate || ""}">
         <span class="muted">${note}</span>
+      </div>${consolesHtml(j)}`;
+    return (pretty ? `<div class="jdate-row"><span>📅 ${escapeHtml(pretty)}</span><span class="muted">${closeTxt}</span></div>` : "") + consolesHtml(j);
+  }
+  // Quién lleva consola en cada Jornada (con los equipos de todos actualizados).
+  const CONSOLE_SLOTS = [["console1Id", "console1_id", "🏠 Consola 1"], ["console2Id", "console2_id", "🎮 Consola 2"]];
+  function consolesHtml(j) {
+    if (isAdmin) return `<div class="jdate-row">${CONSOLE_SLOTS.map(([key, col, label]) => `<span class="console-pair">
+        <label for="${col}-${j.id}">${label}:</label>
+        <select class="text-input jdate-input console-select" id="${col}-${j.id}" data-j="${j.id}" data-col="${col}">
+          <option value="">Sin asignar</option>
+          ${state.players.map(p => `<option value="${p.id}" ${j[key] === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}
+        </select></span>`).join("")}
       </div>`;
-    return pretty ? `<div class="jdate-row"><span>📅 ${escapeHtml(pretty)}</span><span class="muted">${closeTxt}</span></div>` : "";
+    if (!j.console1Id && !j.console2Id) return "";
+    return `<div class="jdate-row">${CONSOLE_SLOTS.filter(([key]) => j[key]).map(([key, , label]) => `<span>${label}: <strong>${escapeHtml(playerName(j[key]))}</strong></span>`).join("")}</div>`;
+  }
+  async function setJornadaConsole(jornadaId, col, value) {
+    if (!isAdmin) return;
+    const { error } = await sb.from("jornadas").update({ [col]: value || null }).eq("id", jornadaId);
+    if (error) showToast("No se pudo guardar quién lleva consola.");
+    await loadSeasonData(); render();
   }
   async function setJornadaDate(jornadaId, value) {
     if (!isAdmin) return;
@@ -3330,6 +3351,7 @@
   });
   document.addEventListener("change", (e) => {
     if (e.target.dataset && e.target.dataset.luFile) { pickLineupFile(e.target); return; }
+    if (e.target.classList && e.target.classList.contains("console-select")) { setJornadaConsole(e.target.dataset.j, e.target.dataset.col, e.target.value); return; }
     if (e.target.classList && e.target.classList.contains("jdate-input")) { setJornadaDate(e.target.dataset.j, e.target.value); return; }
     if (e.target.id === "tx-player") { txPlayer = e.target.value; render(); return; }
     if (e.target.id === "pen-filter") { penPlayer = e.target.value; render(); return; }
