@@ -291,18 +291,23 @@
   .team-edit .lbl { font-size: 12.5px; font-weight: 700; color: var(--text-muted); width: 100%; }
 
   .team-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .stat-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; }
+  .stat-card { display: flex; flex-direction: column; padding: 16px 18px; min-width: 0; }
+  .stat-card .lbl, .stat-card .lbl-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stat-card .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; }
-  .stat-card .val { font-family: var(--font-display); font-weight: 800; font-size: 36px; color: var(--text); line-height: 1; }
+  .stat-card .lbl-sub { font-size: 12px; color: var(--text-muted); opacity: .75; margin-top: 2px; }
+  .stat-card .val { font-family: var(--font-display); font-weight: 800; font-size: 36px; color: var(--text); line-height: 1; margin-top: 10px; }
   .stat-card .val.saldo { color: var(--blue); }
   .stat-card .val.neg { color: var(--red); }
   @media (max-width: 560px) {
     .team-head h2 { font-size: 32px; }
     .team-stats { gap: 8px; }
     .stat-card { padding: 12px 10px; }
-    .stat-card .lbl { font-size: 10px; letter-spacing: .02em; }
+    .stat-card .lbl { font-size: 11px; letter-spacing: .03em; }
+    .stat-card .lbl-sub { font-size: 11px; }
+    .stat-card .val { margin-top: 8px; }
     .stat-card .val { font-size: 26px; }
   }
+  @media (max-width: 350px) { .stat-card { padding: 10px 8px; } .stat-card .lbl-sub { font-size: 10px; } }
   .gt-chart { margin-top: 18px; padding: 16px 16px 10px; }
   .gt-chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 8px; }
   .gt-chart-head h3 { font-family: var(--font-display); font-weight: 700; font-size: 19px; margin: 0; }
@@ -2450,8 +2455,8 @@
           <div class="topbar-actions">
             ${pushSupported() ? `<button class="icon-btn ${pushOn ? "" : "bell-off"}" title="${pushOn ? "Notificaciones activadas (toca para desactivar)" : "Activar notificaciones"}" data-action="toggle-push">${pushOn ? "🔔" : "🔕"}</button>` : ""}
             <button class="icon-btn" title="Reglas" data-action="open-help">ℹ️</button>
-            <button class="icon-btn" title="Descargar respaldo" data-action="download-backup">⭳</button>
-            ${isAdmin ? `<button class="icon-btn" title="Nueva temporada" data-action="new-season">⟲</button>` : ""}
+            <button class="icon-btn" title="Descargar respaldo" data-action="download-backup">📥</button>
+            ${isAdmin ? `<button class="icon-btn" title="Nueva temporada" data-action="new-season">🆕</button>` : ""}
             ${hasSession
               ? `<button class="icon-btn" title="Cerrar sesión (${escapeHtml(sessionEmail)})" data-action="admin-logout">🔓</button>`
               : `<button class="icon-btn" title="Iniciar sesión" data-action="open-login">🔒</button>`
@@ -3753,9 +3758,9 @@
         <div class="section-head team-head"><div class="team-title">${teamLogoHtml(teamsTab, 64)}<h2>${escapeHtml(playerName(teamsTab))}${(tp => tp && tp.team_name ? `<span class="team-sub">${escapeHtml(tp.team_name)}</span>` : "")(state.players.find(x => x.id === teamsTab))}</h2></div><span class="sub">Jugadores: ${f.count}/${SQUAD_SIZE}</span></div>
         ${isAdmin ? teamEditHtml(teamsTab) : ""}
         <div class="team-stats">
-          <div class="stat-card card"><span class="lbl">Saldo</span><span class="val saldo ${f.balance < 0 ? "neg" : ""}">${fcFormatted(f.balance)}</span></div>
-          <div class="stat-card card"><span class="lbl">Nivel promedio (RAT) · top ${TOP_N}</span><span class="val">${avg("rat")}</span></div>
-          <div class="stat-card card"><span class="lbl">Valor promedio · top ${TOP_N}</span><span class="val">${avg("price")}</span></div>
+          <div class="stat-card card"><span class="lbl">Saldo</span><span class="lbl-sub">Disponible</span><span class="val saldo ${f.balance < 0 ? "neg" : ""}">${fcFormatted(f.balance)}</span></div>
+          <div class="stat-card card"><span class="lbl">RAT</span><span class="lbl-sub">Prom. top ${TOP_N}</span><span class="val">${avg("rat")}</span></div>
+          <div class="stat-card card"><span class="lbl">Valor</span><span class="lbl-sub">Prom. top ${TOP_N}</span><span class="val">${avg("price")}</span></div>
         </div>
         ${squad.length ? `
         <div class="table-scroll" style="margin-top:16px;">
