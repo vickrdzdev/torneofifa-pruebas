@@ -501,6 +501,10 @@
   .market-controls select.text-input { flex: 0 0 auto; }
   .check-inline { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); white-space: nowrap; }
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 10px 0; font-size: 14px; }
+  .buy-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .buy-head-info { min-width: 0; flex: 1; }
+  .buy-photo { width: 96px; height: 96px; object-fit: contain; flex-shrink: 0; margin-top: 30px; }
+  @media (max-width: 420px) { .buy-photo { width: 76px; height: 76px; } }
   .pager-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .pager-num { min-width: 64px; text-align: center; }
   @media (max-width: 640px) { .pager .btn-secondary { padding: 7px 12px; } .pg-lbl { display: none; } }
@@ -4032,10 +4036,15 @@
     return `
     <div class="modal-overlay">
       <div class="modal-box" data-stop-close>
-        <h3>Comprar a ${escapeHtml(m.name)}</h3>
-        <p class="muted" style="margin:-6px 0 8px;">${st.phase === "draft" ? escapeHtml(st.title) : "Mercado abierto"}</p>
-        <p class="muted" style="margin-top:-4px;">${escapeHtml(m.pos)} · RAT ${m.rat} · WF ${m.wf}★ · SM ${m.sm}★</p>
-        <p>Valor: RAT ${m.rat} + WF ${wfB} + SM ${smB} = <strong class="fc-text">${fcFormatted(m.price)}</strong></p>
+        <div class="buy-head">
+          <div class="buy-head-info">
+            <h3>Comprar a ${escapeHtml(m.name)}</h3>
+            <p class="muted" style="margin:-6px 0 8px;">${st.phase === "draft" ? escapeHtml(st.title) : "Mercado abierto"}</p>
+            <p class="muted" style="margin-top:-4px;">${escapeHtml(m.pos)} · RAT ${m.rat} · WF ${m.wf}★ · SM ${m.sm}★</p>
+            <p>Valor: RAT ${m.rat} + WF ${wfB} + SM ${smB} = <strong class="fc-text">${fcFormatted(m.price)}</strong></p>
+          </div>
+          ${m.photo ? `<img class="buy-photo" src="${PHOTO_BASE}${escapeHtml(m.photo)}" alt="" width="96" height="96" referrerpolicy="no-referrer" onerror="this.style.display='none'">` : ""}
+        </div>
         <h4>${isAdmin ? "¿Para qué equipo?" : "Tu equipo"}</h4>
         <div class="team-pick">
           ${teams.map(p => `
