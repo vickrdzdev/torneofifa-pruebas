@@ -1149,8 +1149,14 @@
     generateFixturesLocal(jIndex);
     await persistJornada(j);
     const jj = state && state.jornadas.find(x => x.id === jornadaId);
-    if (jj && jj.matches.length) await queueNotifs([{ key: "start:" + jornadaId, url: "./?m=torneo", title: "📣 ¡Inicia la " + jj.label + "!",
+    if (!jj || !jj.matches.length) return;
+    // Las faltas de puntualidad/consola marcadas en la matriz se aplican ahora.
+    const { data: applied, error } = await sb.from("penalties").update({ pending: false }).eq("jornada_id", jornadaId).eq("pending", true).select("id, created_at");
+    if (error) showToast("No se pudieron aplicar las faltas marcadas; revisa 🚨 Penalizaciones.");
+    if (applied && applied.length) { await loadSeasonData(); render(); }
+    await queueNotifs([{ key: "start:" + jornadaId, url: "./?m=torneo", title: "📣 ¡Inicia la " + jj.label + "!",
       body: "Ya está el calendario: " + new Set(jj.matches.flatMap(m => [m.homeId, m.awayId])).size + " players y " + jj.matches.length + " partidos. ¡Suerte!" }]);
+    for (const r of (applied || []).sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))) await notifyPenalty(r.id);
   }
 
   async function setGroupGoal(jornadaId, matchId, side, value) {
@@ -1624,10 +1630,12 @@
     if (!j || !j.activeIds.includes(playerId)) return;
     const res = jornadaFlag(j, playerId, kind)
       ? await sb.from("penalties").delete().eq("jornada_id", jornadaId).eq("player_id", playerId).eq("kind", kind)
-      : await sb.from("penalties").insert({ season_id: state.season.id, jornada_id: jornadaId, player_id: playerId, kind, note: "Registrada en la " + j.label }).select("id");
+      // Antes de generar el calendario la falta queda pendiente (por si fue un error de dedo):
+      // se aplica y se avisa al dar clic en "Generar calendario".
+      : await sb.from("penalties").insert({ season_id: state.season.id, jornada_id: jornadaId, player_id: playerId, kind, note: "Registrada en la " + j.label, pending: !j.matches.length }).select("id");
     if (res.error) showToast("No se pudo guardar el cambio.");
     await loadSeasonData(); render();
-    if (!res.error && res.data && res.data[0]) await notifyPenalty(res.data[0].id);
+    if (!res.error && res.data && res.data[0] && j.matches.length) await notifyPenalty(res.data[0].id);
   }
   function renderAttendanceStage(j) {
     // La matriz de asistencia, puntualidad y consola solo la ven los admins.
@@ -1637,7 +1645,7 @@
     return `
       <div class="card">
         <h2 style="font-family:var(--font-display);font-weight:700;font-size:20px;margin:0 0 4px;">Asistencia — ${j.label}</h2>
-        <p class="attend-note">Marca quiénes juegan esta Jornada (mínimo 4). Si alguien llegó tarde o llevó la consola sin los equipos actualizados, desmarca su casilla: la falta se registra en 🚨 Penalizaciones. El calendario y la Liguilla se generan según quién participe.</p>
+        <p class="attend-note">Marca quiénes juegan esta Jornada (mínimo 4). Si alguien llegó tarde o llevó la consola sin los equipos actualizados, desmarca su casilla: la falta se aplica en 🚨 Penalizaciones (y se avisa al player) hasta que des clic en "Generar calendario". El calendario y la Liguilla se generan según quién participe.</p>
         ${locked ? `<p class="lock-note">🔒 Solo el admin puede editar la asistencia.</p>` : ""}
         ${registerMatrixHtml(j)}
         ${!enough && !locked ? '<p class="attend-warn">Selecciona al menos 4 players.</p>' : ""}
@@ -3004,7 +3012,7 @@
     const jIdx = {}; state.jornadas.forEach((j, i) => jIdx[j.id] = i);
     const faults = [], waived = [];
     // En la J0 se juega con los equipos estándar del FIFA: no hay falta de consola.
-    rows.filter(r => !r.waived && jIdx[r.jornada_id] != null && !(r.kind === "consola" && state.jornadas[jIdx[r.jornada_id]].jornada_number === 0)).forEach(r => faults.push({
+    rows.filter(r => !r.waived && !r.pending && jIdx[r.jornada_id] != null && !(r.kind === "consola" && state.jornadas[jIdx[r.jornada_id]].jornada_number === 0)).forEach(r => faults.push({
       key: r.id, row: r, auto: false, kind: r.kind, playerId: r.player_id,
       jornada: state.jornadas[jIdx[r.jornada_id]], note: r.note || "", at: r.created_at
     }));
