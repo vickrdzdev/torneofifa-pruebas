@@ -4080,7 +4080,7 @@
     await loadSeasonData(); render();
     if (!error) {
       const pu = (state.purchases || []).filter(x => x.card_id === m.id && x.player_id === teamId && !x.sold_at).pop();
-      await queueNotifs([{ key: "buy:" + (pu ? pu.id : m.id + ":" + Date.now()), url: "./?m=transacciones", image: cardImage(m.id),
+      await queueNotifs([{ key: "buy:" + (pu ? pu.id : m.id + ":" + Date.now()), url: "./?m=transacciones",
         title: "💸 " + playerName(teamId) + " compró a " + m.name, body: m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price) + " · " + (before.phase === "draft" ? before.title : "Mercado abierto") }]);
       await notifyDraftAdvance(before, teamId);
     }
