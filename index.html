@@ -3394,10 +3394,8 @@
             <tbody>${ps.map(a => `<tr><th class="row-h">${escapeHtml(a.name)}</th>${ps.map(b => cellHtml(a.id, b.id)).join("")}</tr>`).join("")}</tbody>
           </table>
         </div>
-        <p class="st-foot">Cada celda es el récord del player de la fila contra el rival de la columna:<br>
-          • Arriba, <strong>G-E-P</strong>: partidos ganados, empatados y perdidos contra ese rival.<br>
-          • Abajo, <strong>goles a favor : goles en contra</strong> sumando todos esos partidos. Ejemplo: <strong>1-0-2</strong> y <strong>4:9</strong> = se enfrentaron 3 veces, ganó 1 y perdió 2; metió 4 goles y le metieron 9.<br>
-          Verde = le ha ganado más veces de las que ha perdido; rojo = al revés. Los partidos definidos en penales cuentan como empate.</p>
+        <p class="st-foot">• Arriba, <strong>G-E-P</strong>: partidos ganados, empatados y perdidos contra ese rival.<br>
+          • Abajo, <strong>goles a favor : goles en contra</strong> sumando todos esos partidos. Ejemplo: <strong>1-0-2</strong> y <strong>4:9</strong> = se enfrentaron 3 veces, ganó 1 y perdió 2; metió 4 goles y le metieron 9.</p>
       </div>`;
   }
 
