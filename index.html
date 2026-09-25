@@ -275,6 +275,15 @@
 
   /* ---------- equipos ---------- */
   .team-head h2 { font-size: 38px; line-height: 1.05; }
+  .team-logo { display: inline-block; object-fit: contain; flex: 0 0 auto; vertical-align: middle; }
+  .with-logo { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  .team-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .team-title .team-sub { display: block; font-family: var(--font-body); font-size: 14px; font-weight: 600; color: var(--text-muted); margin-top: 2px; }
+  .team-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 16px; padding: 12px 14px; }
+  .team-edit .text-input { flex: 1 1 200px; padding: 8px 10px; font-size: 14px; }
+  .team-edit .lu-file { padding: 8px 12px; }
+  .team-edit .lbl { font-size: 12.5px; font-weight: 700; color: var(--text-muted); width: 100%; }
+  .champion-banner .name .team-logo { margin-right: 8px; }
   .team-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .stat-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; }
   .stat-card .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; }
@@ -651,6 +660,19 @@
   let buyCardId = null;       // modal de compra abierto
   let buyTeamId = null;
 
+  // Escudo del equipo real del player (lo configura el admin en Equipos).
+  function teamLogoHtml(id, size) {
+    const p = state && state.players.find(pl => pl.id === id);
+    const url = p && p.logo_path && (state.logoUrls || {})[p.logo_path];
+    if (!url) return "";
+    return `<img class="team-logo" src="${escapeHtml(url)}" alt="${escapeHtml(p.team_name || "")}" title="${escapeHtml(p.team_name || "")}" width="${size}" height="${size}" loading="lazy">`;
+  }
+  // Nombre del player con su escudo al lado (si tiene).
+  function playerLabelHtml(id, size) {
+    const logo = teamLogoHtml(id, size || 20);
+    const name = escapeHtml(playerName(id));
+    return logo ? `<span class="with-logo">${logo}<span>${name}</span></span>` : name;
+  }
   function playerName(id) {
     const p = state.players.find(pl => pl.id === id);
     return p ? p.name : "?";
@@ -966,6 +988,16 @@
       passes = res.data || [];
     } catch (e) { passes = []; }
 
+    // Escudos de los equipos (privados): enlaces temporales de 12 h.
+    const logoUrls = {};
+    const logoPaths = (players || []).map(p => p.logo_path).filter(Boolean);
+    if (logoPaths.length) {
+      try {
+        const { data } = await sb.storage.from("logos").createSignedUrls(logoPaths, 60 * 60 * 12);
+        (data || []).forEach(x => { if (x && x.signedUrl) logoUrls[x.path] = x.signedUrl; });
+      } catch (e) { /* sin escudos, el resto sigue */ }
+    }
+
     let lineups = [];
     try {
       const res = await sb.from("lineups").select("*").eq("season_id", season.id);
@@ -989,7 +1021,7 @@
     } catch (e) { penalties = []; }
 
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, penalties };
+    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties };
   }
 
   function newId() {
@@ -1465,11 +1497,11 @@
     return `
       <div class="match-card">
         <div class="match-side home">
-          <span class="match-name">${escapeHtml(playerName(m.homeId))}</span>
+          ${teamLogoHtml(m.homeId, 24)}<span class="match-name">${escapeHtml(playerName(m.homeId))}</span>
         </div>
         ${scoreInputsHtml(m, goalAction, jornadaId)}
         <div class="match-side away">
-          <span class="match-name">${escapeHtml(playerName(m.awayId))}</span>
+          ${teamLogoHtml(m.awayId, 24)}<span class="match-name">${escapeHtml(playerName(m.awayId))}</span>
         </div>
       </div>
       ${shootoutHtml(m, jornadaId, pickAction, isKnockout)}
@@ -1480,7 +1512,7 @@
     const rows = standings.map(s => `
       <tr class="${s.rank <= qualifyCount ? "qualifies" : ""}">
         <td class="pos-cell">${s.rank}</td>
-        <td class="name-cell">${escapeHtml(playerName(s.playerId))}</td>
+        <td class="name-cell">${playerLabelHtml(s.playerId, 22)}</td>
         <td>${s.pj}</td><td>${s.pg}</td><td>${s.pe}</td><td>${s.pp}</td>
         <td>${s.gf}</td><td>${s.gc}</td><td>${s.gd > 0 ? "+" + s.gd : s.gd}</td>
         <td>${s.lc > 0 ? "+" + s.lc : "0"}</td>
@@ -1631,7 +1663,7 @@
       html += `<div class="champion-banner">
         <span class="trophy">🏆</span>
         <div class="label">Campeón de ${j.label}</div>
-        <div class="name">${escapeHtml(playerName(pf.championId))}</div>
+        <div class="name">${teamLogoHtml(pf.championId, 40)}${escapeHtml(playerName(pf.championId))}</div>
       </div>`;
     }
     html += `</div>`;
@@ -2024,7 +2056,7 @@
             <tr>
               <td class="pos-cell">${r.rank}</td>
               <td>${arrow(r.move)}</td>
-              <td class="name-cell">${escapeHtml(playerName(r.playerId))}</td>
+              <td class="name-cell">${playerLabelHtml(r.playerId, 22)}</td>
               ${g.labels.map(l => `<td>${r.perJ[l] != null ? r.perJ[l] : "–"}${r.penJ[l] ? `<span class="pen-mark" title="Incluye −${r.penJ[l]} por penalización">−${r.penJ[l]}</span>` : ""}</td>`).join("")}
               <td class="pts-cell">${r.total}</td>
             </tr>`).join("")}
@@ -3117,6 +3149,80 @@
     if (!m || !m.photo) return `<span class="photo-ph" style="width:${size}px;height:${size}px"></span>`;
     return `<img class="player-photo" src="${PHOTO_BASE}${escapeHtml(m.photo)}" alt="" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`;
   }
+  let teamNameDraft = {};
+  let logoSaving = false;
+  function teamEditHtml(id) {
+    const p = state.players.find(x => x.id === id);
+    const val = teamNameDraft[id] !== undefined ? teamNameDraft[id] : (p.team_name || "");
+    return `<div class="card team-edit">
+        <span class="lbl">Equipo real (solo admin)</span>
+        <input class="text-input team-name-input" id="team-name-${id}" data-p="${id}" type="text" placeholder="Nombre del equipo, ej. Real Madrid" value="${escapeHtml(val)}">
+        <button class="mini-btn" data-action="save-team-name" data-p="${id}">Guardar nombre</button>
+        <label class="btn-secondary lu-file">${logoSaving ? "Subiendo…" : p.logo_path ? "🛡️ Cambiar escudo" : "🛡️ Subir escudo"}<input type="file" accept="image/png,image/jpeg,image/webp" data-logo-file="${id}" ${logoSaving ? "disabled" : ""}></label>
+        ${p.logo_path ? `<button class="mini-btn danger" data-action="remove-logo" data-p="${id}">Quitar escudo</button>` : ""}
+      </div>`;
+  }
+  async function saveTeamName(id) {
+    if (!isAdmin) return;
+    const p = state.players.find(x => x.id === id);
+    const name = (teamNameDraft[id] !== undefined ? teamNameDraft[id] : (p.team_name || "")).trim();
+    const { error } = await sb.from("players").update({ team_name: name || null }).eq("id", id);
+    if (error) { showToast("No se pudo guardar el nombre del equipo."); return; }
+    delete teamNameDraft[id];
+    await loadSeasonData(); render();
+    showToast(name ? "Equipo de " + playerName(id) + ": " + name + "." : "Nombre del equipo quitado.");
+  }
+  // Escudo: se reduce a 256 px en PNG (conserva la transparencia).
+  function shrinkLogo(file) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        try {
+          const k = Math.min(1, 256 / Math.max(im.naturalWidth, im.naturalHeight));
+          const c = document.createElement("canvas");
+          c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+          c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+          c.toBlob(b => { URL.revokeObjectURL(url); resolve(b || file); }, "image/png");
+        } catch (e) { URL.revokeObjectURL(url); resolve(file); }
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      im.src = url;
+    });
+  }
+  async function uploadLogo(input) {
+    const id = input.dataset.logoFile;
+    const file = input.files && input.files[0];
+    if (!isAdmin || !file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { showToast("Usa una imagen PNG, JPG o WEBP."); return; }
+    logoSaving = true; render();
+    try {
+      const blob = await shrinkLogo(file);
+      const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+      const path = `${state.season.id}/${id}-${Date.now()}.${ext}`;
+      const up = await sb.storage.from("logos").upload(path, blob, { contentType: blob.type || "image/png", upsert: false });
+      if (up.error) throw new Error("No se pudo subir el escudo.");
+      const old = (state.players.find(x => x.id === id) || {}).logo_path;
+      const { error } = await sb.from("players").update({ logo_path: path }).eq("id", id);
+      if (error) throw new Error("No se pudo guardar el escudo.");
+      if (old) { try { await sb.storage.from("logos").remove([old]); } catch (e) {} }
+      logoSaving = false;
+      await loadSeasonData(); render();
+      showToast("Escudo de " + playerName(id) + " actualizado.");
+    } catch (e) {
+      logoSaving = false; render();
+      showToast(e.message || "No se pudo subir el escudo.");
+    }
+  }
+  async function removeLogo(id) {
+    if (!isAdmin) return;
+    if (!confirm("¿Quitar el escudo de " + playerName(id) + "?")) return;
+    const old = (state.players.find(x => x.id === id) || {}).logo_path;
+    const { error } = await sb.from("players").update({ logo_path: null }).eq("id", id);
+    if (error) { showToast("No se pudo quitar el escudo."); return; }
+    if (old) { try { await sb.storage.from("logos").remove([old]); } catch (e) {} }
+    await loadSeasonData(); render();
+  }
   function renderTeamsModule() {
     loadMarket(); // para las fotos de los jugadores
     if (!teamsTab || !state.players.some(p => p.id === teamsTab)) teamsTab = state.players[0] && state.players[0].id;
@@ -3133,7 +3239,8 @@
     const avg = key => top.length ? (top.reduce((a, pu) => a + pu[key], 0) / top.length).toFixed(1) : "–";
     const body = `
       <div class="section">
-        <div class="section-head team-head"><h2>${escapeHtml(playerName(teamsTab))}</h2><span class="sub">Jugadores: ${f.count}/${SQUAD_SIZE}</span></div>
+        <div class="section-head team-head"><div class="team-title">${teamLogoHtml(teamsTab, 64)}<h2>${escapeHtml(playerName(teamsTab))}${(tp => tp && tp.team_name ? `<span class="team-sub">${escapeHtml(tp.team_name)}</span>` : "")(state.players.find(x => x.id === teamsTab))}</h2></div><span class="sub">Jugadores: ${f.count}/${SQUAD_SIZE}</span></div>
+        ${isAdmin ? teamEditHtml(teamsTab) : ""}
         <div class="team-stats">
           <div class="stat-card card"><span class="lbl">Saldo</span><span class="val saldo ${f.balance < 0 ? "neg" : ""}">${fcFormatted(f.balance)}</span></div>
           <div class="stat-card card"><span class="lbl">Nivel promedio (RAT) · top ${TOP_N}</span><span class="val">${avg("rat")}</span></div>
@@ -3496,7 +3603,7 @@
     const kept = captureScoreInputs();
     const loginVals = ["login-user", "login-pass"].map(id => { const el = document.getElementById(id); return el ? el.value : null; });
     const a = document.activeElement;
-    const focusId = a && a.id && /^(market-search$|lu-code-|acc-|pen-note$)/.test(a.id) ? a.id : null;
+    const focusId = a && a.id && /^(market-search$|lu-code-|acc-|pen-note$|team-name-)/.test(a.id) ? a.id : null;
     const caret = focusId ? a.selectionStart : null;
     renderInner();
     restoreScoreInputs(kept);
@@ -3585,6 +3692,8 @@
       case "admin-logout": adminLogout(); break;
       case "add-penalty": addPenalty(); break;
       case "save-magna": saveMagna(false); break;
+      case "save-team-name": saveTeamName(el.dataset.p); break;
+      case "remove-logo": removeLogo(el.dataset.p); break;
       case "clear-magna": if (confirm("¿Borrar el resultado de la " + (prizeStandings().magna || {}).type + "?")) saveMagna(true); break;
       case "waive-penalty": waivePenalty(el.dataset.j, el.dataset.p); break;
       case "delete-penalty": deletePenaltyRow(el.dataset.id, "¿Borrar esta falta? Se recalculan las penalizaciones."); break;
@@ -3644,6 +3753,7 @@
     }
     if (e.target.classList && e.target.classList.contains("acc-input")) { accDrafts[e.target.dataset.p] = e.target.value; return; }
     if (e.target.id === "pen-note") { penForm.note = e.target.value; return; }
+    if (e.target.classList && e.target.classList.contains("team-name-input")) { teamNameDraft[e.target.dataset.p] = e.target.value; return; }
     if (e.target.id !== "market-search") return;
     marketQuery = e.target.value;
     clearTimeout(marketSearchTimer);
@@ -3651,6 +3761,7 @@
   });
   document.addEventListener("change", (e) => {
     if (e.target.dataset && e.target.dataset.luFile) { pickLineupFile(e.target); return; }
+    if (e.target.dataset && e.target.dataset.logoFile) { uploadLogo(e.target); return; }
     if (e.target.classList && e.target.classList.contains("console-select")) { setJornadaConsole(e.target.dataset.j, e.target.dataset.col, e.target.value); return; }
     if (e.target.classList && e.target.classList.contains("jdate-input")) { setJornadaDate(e.target.dataset.j, e.target.value); return; }
     if (e.target.id === "tx-player") { txPlayer = e.target.value; render(); return; }
