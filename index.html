@@ -4107,7 +4107,7 @@
       const rows = [];
       if (after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
         const next = after.playerId;
-        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + ". Sigue el turno de " + playerName(next) + "." });
+        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + "." });
         if (next !== actor) rows.push({ key: key + ":me", url: "./?m=mercado", target: next, title: "🔄 Comienza tu turno",
           body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : "") });
       } else if (after.phase === "open") {
