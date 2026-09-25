@@ -2621,13 +2621,15 @@
   async function queueNotifs(rows, opts) {
     rows = (rows || []).filter(Boolean);
     if (!rows.length || !state) return;
-    const payload = rows.map(r => ({
+    // Los avisos de un mismo lote salen en el orden de la lista (1 ms entre cada uno).
+    const base = Date.now();
+    const payload = rows.map((r, i) => ({
       season_id: state.season.id, key: r.key, kind: r.kind || "plain", jornada_id: r.jornadaId || null,
       target_player: r.target || null,
       exclude_player: Array.isArray(r.exclude) ? null : r.exclude || null,
       exclude_players: Array.isArray(r.exclude) ? r.exclude.filter(Boolean) : null,
       title: r.title, body: r.body || "", image: r.image || null, url: r.url || null,
-      send_at: new Date(r.at || Date.now()).toISOString(),
+      send_at: new Date(r.at || base + i).toISOString(),
       ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
     }));
     try { await sb.from("notifications").upsert(payload, { onConflict: "key", ignoreDuplicates: true }); } catch (e) { return; }
