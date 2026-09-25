@@ -1264,18 +1264,6 @@
     render();
   }
 
-  function downloadBackup() {
-    if (!state) return;
-    try {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = "torneo-" + (state.season.name || "temporada") + ".json";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (e) { showToast("No se pudo generar el respaldo."); }
-  }
-
   /* ============================== auth ============================== */
   async function submitLogin() {
     const email = ($("#login-user") || {}).value || "";
@@ -2491,7 +2479,6 @@
           <div class="topbar-actions">
             ${pushSupported() ? `<button class="icon-btn ${pushOn ? "" : "bell-off"}" title="${pushOn ? "Notificaciones activadas (toca para desactivar)" : "Activar notificaciones"}" data-action="toggle-push">${pushOn ? "🔔" : "🔕"}</button>` : ""}
             <button class="icon-btn" title="Reglas" data-action="open-help">ℹ️</button>
-            <button class="icon-btn" title="Descargar respaldo" data-action="download-backup">📥</button>
             ${isAdmin ? `<button class="icon-btn" title="Nueva temporada" data-action="new-season">🆕</button>` : ""}
             ${hasSession
               ? `<button class="icon-btn" title="Cerrar sesión (${escapeHtml(sessionEmail)})" data-action="admin-logout">🔓</button>`
@@ -4362,7 +4349,6 @@
       case "toggle-push": togglePush(); break;
       case "open-help": helpOpen = true; render(); break;
       case "close-help": helpOpen = false; render(); break;
-      case "download-backup": downloadBackup(); break;
       case "new-season": newSeasonFlow(); break;
       case "open-login": e.preventDefault(); loginOpen = true; loginError = ""; render(); break;
       case "close-login": loginOpen = false; loginError = ""; render(); break;
