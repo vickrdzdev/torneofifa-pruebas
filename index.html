@@ -412,7 +412,10 @@
   .pen-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .pen-rules .card { padding: 14px 16px; font-size: 13.5px; line-height: 1.55; }
   .pen-rules h3 { margin: 0 0 6px; font-family: var(--font-display); font-size: 18px; }
-  .pen-rules ol { margin: 0; padding-left: 20px; }
+  .pen-rules .pen-intro { margin: 0 0 10px; color: var(--text-muted); font-size: 13px; }
+  .pen-rules .pen-step { margin-top: 10px; }
+  .pen-rules .pen-step strong { display: block; font-size: 14px; }
+  .pen-rules ul { margin: 3px 0 0; padding-left: 18px; }
   .draft-banner .pen-note { flex-basis: 100%; color: var(--red); font-size: 13px; }
 
   /* ---------- alineaciones ---------- */
@@ -2357,12 +2360,20 @@
         </table>
       </div>` : `<div class="empty-state">${penPlayer ? "Este player no tiene faltas." : "Sin faltas registradas. 🙌"}</div>`;
 
-    const rule = (k, lines) => `<div class="card"><h3>${PEN_KINDS[k].icon} ${PEN_KINDS[k].label}</h3><ol>${lines.map(l => `<li>${l}</li>`).join("")}</ol></div>`;
-    const S1 = "−2 pts y pierde su 1er turno del Draft", S2 = "−3 pts y pierde sus 2 turnos del Draft";
+    const rule = (k, intro, steps) => `<div class="card"><h3>${PEN_KINDS[k].icon} ${PEN_KINDS[k].label}</h3>
+        <p class="pen-intro">${intro}</p>
+        ${steps.map(([t, lines]) => `<div class="pen-step"><strong>${t}</strong><ul>${lines.map(l => `<li>${l}</li>`).join("")}</ul></div>`).join("")}
+      </div>`;
+    const TOL = ["Sin penalización: es tolerancia por si algo impide cumplir."];
+    const P1 = ["Pierde 2 puntos en la Tabla General (puede quedar en negativo).", "Pierde su 1ª selección del Draft de la Jornada; sí puede hacer su 2ª selección.", "Puede usar el Mercado abierto normalmente."];
+    const P2 = ["Pierde 3 puntos en la Tabla General (puede quedar en negativo).", "Pierde sus 2 selecciones del Draft de la Jornada.", "Puede usar el Mercado abierto normalmente."];
     const rulesHtml = `<div class="pen-rules">
-        ${rule("consola", [S1, S2 + " (y así en adelante)"])}
-        ${rule("alineacion", ["Tolerancia, sin penalización", S1, S2 + " (y así en adelante)"])}
-        ${rule("retardo", ["Tolerancia, sin penalización", "Tolerancia, sin penalización", S1, S2 + " (y así en adelante)"])}
+        ${rule("consola", "Consola 1 o Consola 2 llega con los equipos de todos sin actualizar. No aplica en la J0, que se juega con los equipos estándar del FIFA.",
+          [["1ª falta", P1], ["2ª falta en adelante", P2]])}
+        ${rule("alineacion", "No subir código, titulares y banca completos antes del martes a las 11:59 pm previo a la Jornada, subirlos tarde o con errores.",
+          [["1ª falta", TOL], ["2ª falta", P1], ["3ª falta en adelante", P2]])}
+        ${rule("retardo", "Llegar después de las 9:15 pm en horario nocturno o de las 5:15 pm en horario vespertino.",
+          [["1ª y 2ª falta", TOL], ["3ª falta", P1], ["4ª falta en adelante", P2]])}
       </div>`;
 
     return `
@@ -2383,7 +2394,6 @@
       <div class="section">
         <div class="section-head"><h2>Reglas</h2></div>
         ${rulesHtml}
-        <p class="st-foot">Cada tipo de falta se cuenta por separado. Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y afectan las FIFA Coins de esa Jornada. Los turnos se pierden en el Draft que sigue a esa Jornada (en la J0, el Draft inicial; la J11 no tiene Draft). En la J0 no hay falta de consola porque se juega con los equipos estándar del FIFA y el Mercado abierto se puede usar normalmente. Si en una misma Jornada se juntan varias faltas, los puntos se suman y se pierden como máximo 2 turnos. Las alineaciones tarde, incompletas o no subidas cuentan solas al cerrar el plazo (salvo a quien faltó a la Jornada). Los retardos y la consola desactualizada se registran desmarcando la casilla del player en la matriz de asistencia de la Jornada.</p>
       </div>`;
   }
   async function addPenalty() {
