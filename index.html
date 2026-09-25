@@ -3195,8 +3195,10 @@
   async function notifyPenalty(rowId) {
     const f = penaltyFaults().active.find(x => x.row && x.row.id === rowId);
     if (!f) return;
-    await queueNotifs([{ key: "pen:" + rowId, target: f.playerId, url: "./?m=penalizaciones", title: "🚨 Penalización",
-      body: PEN_KINDS[f.kind].label + " en la " + f.jornada.label + " (" + f.n + "ª falta): " + sanctionText(f.sanction, f.jornada) + "." }]);
+    const detail = PEN_KINDS[f.kind].label + " en la " + f.jornada.label + " (" + f.n + "ª falta): " + sanctionText(f.sanction, f.jornada) + ".";
+    await queueNotifs([
+      { key: "pen:" + rowId, target: f.playerId, url: "./?m=penalizaciones", title: "🚨 Penalización", body: detail },
+      { key: "pen:" + rowId + ":all", exclude: f.playerId, url: "./?m=penalizaciones", title: "🚨 Penalización a " + playerName(f.playerId), body: detail }]);
   }
   async function waivePenalty(jornadaId, playerId) {
     if (!isAdmin) return;
