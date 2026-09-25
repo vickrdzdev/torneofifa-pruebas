@@ -4163,7 +4163,6 @@
     const st = marketStatus();
     const amount = saleAmount(pu.price);
     const fin = teamFinances()[pu.player_id] || { balance: 0, count: 0 };
-    const mine = myPlayerIds.includes(pu.player_id);
     return `
     <div class="modal-overlay">
       <div class="modal-box" data-stop-close>
@@ -4171,7 +4170,6 @@
         <p class="muted" style="margin:-6px 0 8px;">${st.phase === "draft" ? escapeHtml(st.title) : "Mercado abierto"}</p>
         <p class="muted" style="margin-top:-4px;">${escapeHtml(pu.pos || "")} · RAT ${pu.rat}${pu.wf ? " · WF " + pu.wf + "★" : ""}${pu.sm ? " · SM " + pu.sm + "★" : ""}</p>
         <div class="confirm-rows">
-          <div><span class="muted">${mine ? "Tu equipo" : "Equipo"}</span><strong>${escapeHtml(playerName(pu.player_id))}</strong></div>
           <div><span class="muted">Precio de compra</span><strong>${fcFormatted(pu.price)}</strong></div>
           <div><span class="muted">Recibe (97%)</span><strong class="fc-text">+${fcFormatted(amount)}</strong></div>
         </div>
