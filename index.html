@@ -1541,6 +1541,8 @@
     await loadSeasonData(); render();
   }
   function renderAttendanceStage(j) {
+    // La matriz de asistencia, puntualidad y consola solo la ven los admins.
+    if (!isAdmin) return `<div class="empty-state">El calendario de la ${escapeHtml(j.label)} aparecerá aquí cuando el admin lo genere.</div>`;
     const enough = j.activeIds.length >= 4;
     const locked = !isAdmin;
     return `
