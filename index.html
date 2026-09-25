@@ -4132,7 +4132,7 @@
     if (error) showToast("No se pudo registrar la venta.");
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
     await loadSeasonData(); render();
-    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", image: cardImage(pu.card_id), exclude: notifActor(pu.player_id),
+    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", exclude: notifActor(pu.player_id),
       title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado." }]);
   }
   async function undoPurchase(purchaseId) {
