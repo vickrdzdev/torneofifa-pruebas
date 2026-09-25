@@ -531,6 +531,9 @@
   .team-opt { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 12px; color: var(--text); font-weight: 600; font-size: 15px; text-align: left; }
   .team-opt.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
   .team-opt.full { opacity: .5; cursor: not-allowed; }
+  .confirm-rows { display: grid; gap: 6px; margin: 12px 0; }
+  .confirm-rows > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 15px; }
+  .confirm-rows strong { font-variant-numeric: tabular-nums; }
   .full-tag { background: var(--surface); border: 1px solid var(--line); color: var(--text-muted); font-size: 10.5px; border-radius: 5px; padding: 1px 6px; text-transform: uppercase; font-weight: 700; margin-left: 4px; }
   .turn-tag { background: var(--accent); color: var(--accent-ink); font-size: 10.5px; border-radius: 5px; padding: 1px 6px; text-transform: uppercase; font-weight: 700; margin-left: 4px; }
   table.standings td.fc-cell { font-weight: 800; color: var(--blue); font-size: 15px; }
@@ -679,6 +682,8 @@
   let txPlayer = "";          // filtro de Transacciones por persona
   let txKind = "";            // filtro por tipo
   let buyCardId = null;       // modal de compra abierto
+  let sellId = null;          // modal de venta abierto (id de la compra)
+  let passOpen = false;       // modal para pasar turno en el draft
   let buyTeamId = null;
 
   // Escudo del equipo real del player (lo configura el admin en Equipos).
@@ -2521,6 +2526,8 @@
       ${helpModalHtml()}
       ${loginModalHtml()}
       ${buyModalHtml()}
+      ${sellModalHtml()}
+      ${passModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
   }
@@ -3930,11 +3937,39 @@
       ${st.lost && Object.keys(st.lost).length ? `<span class="pen-note">🚨 Penalización: ${Object.entries(st.lost).map(([id, n]) => `<strong>${escapeHtml(playerName(id))}</strong> pierde ${n === 1 ? "su 1er turno" : "sus " + n + " primeros turnos"}`).join(" · ")} de este Draft (se saltan solos).</span>` : ""}
     </div>`;
   }
-  async function passDraftTurn() {
+  function passModalHtml() {
+    if (!passOpen) return "";
+    const st = marketStatus();
+    if (st.phase !== "draft" || !st.canPass) return "";
+    const mine = myPlayerIds.includes(st.playerId);
+    const fin = teamFinances()[st.playerId] || { balance: 0, count: 0 };
+    return `
+    <div class="modal-overlay">
+      <div class="modal-box" data-stop-close>
+        <h3>${mine ? "Pasar tu turno" : "Pasar el turno de " + escapeHtml(playerName(st.playerId))}</h3>
+        <p class="muted" style="margin:-6px 0 8px;">${escapeHtml(st.title)}</p>
+        <div class="confirm-rows">
+          <div><span class="muted">Turno de</span><strong>${escapeHtml(playerName(st.playerId))}</strong></div>
+          <div><span class="muted">Saldo · jugadores</span><strong>${fcFormatted(fin.balance)} · ${fin.count}/${SQUAD_SIZE}</strong></div>
+          ${st.nextId ? `<div><span class="muted">Sigue</span><strong>${escapeHtml(playerName(st.nextId))}</strong></div>` : ""}
+        </div>
+        <p class="muted">${mine ? "No compras" : "No compra"} jugador en este turno. No se puede deshacer.</p>
+        <div class="modal-close-row" style="gap:10px;">
+          <button class="btn-secondary" data-action="close-pass">Cancelar</button>
+          <button class="btn-primary" style="width:auto;" data-action="confirm-pass">Confirmar pase</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function passDraftTurn() {
     const st = marketStatus();
     if (st.phase !== "draft" || !st.canPass || !tradePerms(st.playerId, st).pass) return;
-    const who = myPlayerIds.includes(st.playerId) && !isAdmin ? "Pasas tu turno" : playerName(st.playerId) + " pasa su turno";
-    if (!confirm(who + " en el " + st.title + ". ¿Continuar?")) return;
+    passOpen = true; render();
+  }
+  async function confirmPass() {
+    passOpen = false;
+    const st = marketStatus();
+    if (st.phase !== "draft" || !st.canPass || !tradePerms(st.playerId, st).pass) { render(); return; }
     const before = draftSnapshot();
     const { error } = await sb.from("draft_passes").insert({ season_id: state.season.id, player_id: st.playerId, draft: st.key });
     if (error) showToast("No se pudo registrar el pase.");
@@ -4121,13 +4156,49 @@
   }
   const SALE_RATE = 0.97;
   function saleAmount(price) { return Math.round(price * SALE_RATE * 100) / 100; }
-  async function sellPlayer(purchaseId) {
+  function sellModalHtml() {
+    if (!sellId) return "";
+    const pu = (state.purchases || []).find(x => x.id === sellId && !x.sold_at);
+    if (!pu) return "";
+    const st = marketStatus();
+    const amount = saleAmount(pu.price);
+    const fin = teamFinances()[pu.player_id] || { balance: 0, count: 0 };
+    const mine = myPlayerIds.includes(pu.player_id);
+    return `
+    <div class="modal-overlay">
+      <div class="modal-box" data-stop-close>
+        <h3>Vender a ${escapeHtml(pu.card_name)}</h3>
+        <p class="muted" style="margin:-6px 0 8px;">${st.phase === "draft" ? escapeHtml(st.title) : "Mercado abierto"}</p>
+        <p class="muted" style="margin-top:-4px;">${escapeHtml(pu.pos || "")} · RAT ${pu.rat}${pu.wf ? " · WF " + pu.wf + "★" : ""}${pu.sm ? " · SM " + pu.sm + "★" : ""}</p>
+        <div class="confirm-rows">
+          <div><span class="muted">${mine ? "Tu equipo" : "Equipo"}</span><strong>${escapeHtml(playerName(pu.player_id))}</strong></div>
+          <div><span class="muted">Precio de compra</span><strong>${fcFormatted(pu.price)}</strong></div>
+          <div><span class="muted">Recibe (97%)</span><strong class="fc-text">+${fcFormatted(amount)}</strong></div>
+        </div>
+        <p>Saldo después de la venta: <strong>${fcFormatted(fin.balance + amount)}</strong></p>
+        <p class="muted">${escapeHtml(pu.card_name)} regresa al Mercado y cualquiera lo puede comprar.</p>
+        <div class="modal-close-row" style="gap:10px;">
+          <button class="btn-secondary" data-action="close-sell">Cancelar</button>
+          <button class="btn-primary" style="width:auto;" data-action="confirm-sell">Confirmar venta</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function sellPlayer(purchaseId) {
     const pu = (state.purchases || []).find(x => x.id === purchaseId && !x.sold_at);
     if (!pu) return;
     const st = marketStatus();
     if (!tradePerms(pu.player_id, st).sell) { showToast(marketAllowsTrades(st) ? tradeBlockedMsg(st) : "El Mercado está cerrado: no se puede vender."); return; }
+    sellId = purchaseId; render();
+  }
+  async function confirmSale() {
+    const purchaseId = sellId;
+    sellId = null;
+    const pu = (state.purchases || []).find(x => x.id === purchaseId && !x.sold_at);
+    if (!pu) { render(); return; }
+    const st = marketStatus();
+    if (!tradePerms(pu.player_id, st).sell) { showToast(marketAllowsTrades(st) ? tradeBlockedMsg(st) : "El Mercado está cerrado: no se puede vender."); render(); return; }
     const amount = saleAmount(pu.price);
-    if (!confirm("¿Vender a " + pu.card_name + " (equipo de " + playerName(pu.player_id) + ")? Recibe " + fcPlain(amount) + " (97% de " + fcPlain(pu.price) + ") y el jugador regresa al Mercado.")) return;
     const { error } = await sb.from("team_purchases").update({ sold_at: new Date().toISOString(), sale_amount: amount }).eq("id", purchaseId).is("sold_at", null);
     if (error) showToast("No se pudo registrar la venta.");
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
@@ -4203,7 +4274,7 @@
 
   document.addEventListener("click", (e) => {
     const overlay = e.target.closest(".modal-overlay");
-    if (overlay && !e.target.closest("[data-stop-close]")) { helpOpen = false; loginOpen = false; buyCardId = null; buyTeamId = null; render(); return; }
+    if (overlay && !e.target.closest("[data-stop-close]")) { helpOpen = false; loginOpen = false; buyCardId = null; buyTeamId = null; sellId = null; passOpen = false; render(); return; }
 
     const el = e.target.closest("[data-action]");
     if (!el) return;
@@ -4249,7 +4320,11 @@
       case "confirm-buy": confirmPurchase(); break;
       case "undo-purchase": undoPurchase(el.dataset.purchase); break;
       case "sell-player": sellPlayer(el.dataset.purchase); break;
+      case "close-sell": sellId = null; render(); break;
+      case "confirm-sell": confirmSale(); break;
       case "draft-pass": passDraftTurn(); break;
+      case "close-pass": passOpen = false; render(); break;
+      case "confirm-pass": confirmPass(); break;
       case "end-fast-track": endFastTrack(); break;
       case "toggle-push": togglePush(); break;
       case "open-help": helpOpen = true; render(); break;
