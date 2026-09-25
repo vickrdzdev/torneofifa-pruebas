@@ -6,7 +6,12 @@
 <title>Torneo FIFA</title>
 <meta name="application-name" content="Torneo FIFA">
 <meta name="apple-mobile-web-app-title" content="Torneo FIFA">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚽</text></svg>">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1410">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="48x48" href="icons/icon-48.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -3801,6 +3806,10 @@
     else { loading = false; render(); }
   }
   init();
+  // App instalable (icono propio, pantalla completa). Ver sw.js.
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
+  }
 })();
 </script>
 </body>
