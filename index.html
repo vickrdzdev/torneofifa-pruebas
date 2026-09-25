@@ -2248,18 +2248,12 @@
     }).catch(() => { marketLoading = false; marketError = true; render(); });
   }
 
-  function rewardsLegendHtml() {
-    const places = REWARD_POINTS.map((p, i) => `${i + 1}° = ${p}`).join(" · ");
-    return `<p class="qual-note">Puntos por lugar en la fase de grupos: ${places} · Faltó = ${ABSENT_POINTS}. Bono de la Final: Campeón +${CHAMPION_BONUS}, Subcampeón +${RUNNER_UP_BONUS}.</p>`;
-  }
   function renderRewards() {
     const done = state.jornadas.map(j => ({ j, r: jornadaRewards(j) })).filter(x => x.r).reverse();
     const snaps = generalTable().snapshots;
     const fcOf = (j, r, row) => jornadaFifaCoins(j, r, snaps, row);
     let html = `<div class="section">
-      <div class="section-head"><h2>Recompensas</h2><span class="sub">Puntos por Jornada</span></div>
-      ${rewardsLegendHtml()}
-      <p class="qual-note">Camp. = Campeón · Subc. = Subcampeón. FC (${FC_SYM}): FIFA Coins según el lugar en la Tabla General al final de la Jornada y la distancia en puntos con el 1° (ver tabla en ℹ️ Reglas).</p>`;
+      <div class="section-head"><h2>Recompensas</h2></div>`;
     if (!done.length) {
       html += `<div class="card empty-note">Todavía no hay Jornadas con la fase de grupos terminada. Los puntos aparecen aquí en cuanto se capturen todos los partidos de una Jornada.</div>`;
     }
