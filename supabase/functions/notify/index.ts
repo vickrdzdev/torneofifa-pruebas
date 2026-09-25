@@ -12,7 +12,7 @@ const CORS = {
 
 type Row = {
   id: string; key: string; kind: string; season_id: string | null; jornada_id: string | null;
-  target_player: string | null; exclude_player: string | null;
+  target_player: string | null; exclude_player: string | null; exclude_players: string[] | null;
   title: string; body: string; image: string | null; url: string | null; send_at: string;
 };
 
@@ -37,9 +37,10 @@ async function recipients(row: Row): Promise<string[] | "all"> {
       return jr && jr.console1_id ? [jr.console1_id] : [];
   }
   if (row.target_player) return [row.target_player];
-  if (row.exclude_player) {
+  const excluded = [row.exclude_player, ...(row.exclude_players || [])].filter(Boolean);
+  if (excluded.length) {
     const { data } = await sb.from("player_accounts").select("player_id");
-    return (data || []).map((a) => a.player_id).filter((id) => id !== row.exclude_player);
+    return (data || []).map((a) => a.player_id).filter((id) => !excluded.includes(id));
   }
   return "all";
 }

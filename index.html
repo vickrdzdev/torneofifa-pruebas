@@ -2602,13 +2602,15 @@
     clearTimeout(notifyTimer);
     notifyTimer = setTimeout(() => { try { sb.functions.invoke("notify", { body: {} }).catch(() => {}); } catch (e) {} }, 400);
   }
-  // rows: [{ key, title, body, target?, exclude?, kind?, jornadaId?, image?, url?, at? }]
+  // rows: [{ key, title, body, target?, exclude? (id o lista de ids), kind?, jornadaId?, image?, url?, at? }]
   async function queueNotifs(rows, opts) {
     rows = (rows || []).filter(Boolean);
     if (!rows.length || !state) return;
     const payload = rows.map(r => ({
       season_id: state.season.id, key: r.key, kind: r.kind || "plain", jornada_id: r.jornadaId || null,
-      target_player: r.target || null, exclude_player: r.exclude || null,
+      target_player: r.target || null,
+      exclude_player: Array.isArray(r.exclude) ? null : r.exclude || null,
+      exclude_players: Array.isArray(r.exclude) ? r.exclude.filter(Boolean) : null,
       title: r.title, body: r.body || "", image: r.image || null, url: r.url || null,
       send_at: new Date(r.at || Date.now()).toISOString(),
       ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
@@ -4092,9 +4094,29 @@
     await loadSeasonData(); render();
     if (!error) {
       const pu = (state.purchases || []).filter(x => x.card_id === m.id && x.player_id === teamId && !x.sold_at).pop();
-      await queueNotifs([{ key: "buy:" + (pu ? pu.id : m.id + ":" + Date.now()), url: "./?m=transacciones", exclude: notifActor(teamId),
-        title: "💸 " + playerName(teamId) + " compró a " + m.name, body: m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price) + " · " + (before.phase === "draft" ? before.title : "Mercado abierto") }]);
-      await notifyDraftAdvance(before, teamId);
+      const key = "buy:" + (pu ? pu.id : m.id + ":" + Date.now());
+      const title = "💸 " + playerName(teamId) + " compró a " + m.name;
+      const info = m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price);
+      const actor = notifActor(teamId);
+      if (before.phase !== "draft") {
+        await queueNotifs([{ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · Mercado abierto" }]);
+        return;
+      }
+      // En el draft, la compra y el cambio de turno van en un solo aviso.
+      const after = draftSnapshot();
+      const rows = [];
+      if (after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
+        const next = after.playerId;
+        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + ". Sigue el turno de " + playerName(next) + "." });
+        if (next !== actor) rows.push({ key: key + ":me", url: "./?m=mercado", target: next, title: "🔄 Comienza tu turno",
+          body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : "") });
+      } else if (after.phase === "open") {
+        rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres." });
+      } else {
+        rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title });
+      }
+      await queueNotifs(rows);
+      await syncDraftSchedule();
     }
   }
   const SALE_RATE = 0.97;
