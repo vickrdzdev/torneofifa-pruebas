@@ -2368,7 +2368,7 @@
     const P1 = ["Pierde 2 puntos en la Tabla General (puede quedar en negativo).", "Pierde su 1ª selección del Draft de la Jornada; sí puede hacer su 2ª selección.", "Puede usar el Mercado abierto normalmente."];
     const P2 = ["Pierde 3 puntos en la Tabla General (puede quedar en negativo).", "Pierde sus 2 selecciones del Draft de la Jornada.", "Puede usar el Mercado abierto normalmente."];
     const rulesHtml = `<div class="pen-rules">
-        ${rule("consola", "Consola 1 o Consola 2 llega con los equipos de todos sin actualizar. No aplica en la J0, que se juega con los equipos estándar del FIFA.",
+        ${rule("consola", "Consola 1 o Consola 2 llega con los equipos sin actualizar completa o parcialmente. No aplica en la J0, que se juega con los equipos estándar del FIFA.",
           [["1ª falta", P1], ["2ª falta en adelante", P2]])}
         ${rule("alineacion", "No subir código, titulares y banca completos antes del martes a las 11:59 pm previo a la Jornada, subirlos tarde o con errores.",
           [["1ª falta", TOL], ["2ª falta", P1], ["3ª falta en adelante", P2]])}
