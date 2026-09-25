@@ -369,6 +369,8 @@
   .draft-tag.open { background: var(--blue); color: #fff; }
   .draft-tag.closed { background: var(--red); color: #fff; }
   .my-turn { flex-basis: 100%; font-weight: 700; color: var(--accent); }
+  .draft-clock { flex-basis: 100%; font-size: 13px; color: var(--text-muted); }
+  .draft-clock strong { color: var(--text); }
   .pass-btn { margin-left: auto; padding: 6px 12px; font-size: 13px; }
   /* ---------- estadísticas ---------- */
   .st-filter { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; margin-bottom: 16px; }
@@ -1015,6 +1017,12 @@
       } catch (e) { /* sin imágenes, el resto sigue */ }
     }
 
+    let draftStates = [];
+    try {
+      const res = await sb.from("draft_states").select("*").eq("season_id", season.id);
+      draftStates = res.data || [];
+    } catch (e) { draftStates = []; }
+
     let penalties = [];
     try {
       const res = await sb.from("penalties").select("*").eq("season_id", season.id).order("created_at");
@@ -1022,7 +1030,8 @@
     } catch (e) { penalties = []; }
 
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties };
+    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties, draftStates };
+    ensureDraftStarted();
   }
 
   function newId() {
@@ -1327,6 +1336,15 @@
   // Al volver a la app (desbloquear el celular, regresar de otra app o
   // recuperar la red) se recargan los datos: mientras estaba en segundo plano
   // la conexión en vivo pudo pausarse y perderse algún cambio.
+  let lastDraftSig = "";
+  setInterval(() => {
+    if (!state || !hasSession || loading) return;
+    const st = marketStatus();
+    const sig = [st.phase, st.mode, st.playerId, st.pick].join("|");
+    if (sig !== lastDraftSig) { const first = !lastDraftSig; lastDraftSig = sig; if (!first) render(); return; }
+    const el = document.getElementById("draft-left");
+    if (el && st.deadline) el.textContent = formatLeft(st.deadline - Date.now());
+  }, 30000);
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { hiddenAt = Date.now(); return; }
@@ -1349,6 +1367,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "draft_passes" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "lineups" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "penalties" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "draft_states" }, scheduleReload)
       .subscribe();
   }
 
@@ -1929,6 +1948,140 @@
     return new Date(Date.UTC(y, m - 1, d - back + 1, 5, 59, 59));
   }
   const JORNADA_DRAFT_ROUNDS = 2; // una vuelta snake: ida y vuelta
+  const TURN_MS = 24 * 60 * 60 * 1000;
+
+  // Lunes 00:00 (CDMX, UTC-6) inmediato posterior a la fecha de la Jornada; sin
+  // fecha, el lunes posterior al inicio del Draft.
+  function draftMondayAfter(playDate, fallbackMs) {
+    let y, m, d;
+    if (playDate) [y, m, d] = playDate.split("-").map(Number);
+    else {
+      const loc = new Date(fallbackMs - 6 * 3600 * 1000); // fecha en CDMX
+      y = loc.getUTCFullYear(); m = loc.getUTCMonth() + 1; d = loc.getUTCDate();
+    }
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = domingo
+    const ahead = ((8 - dow) % 7) || 7;
+    return Date.UTC(y, m - 1, d + ahead, 6, 0, 0);
+  }
+  function draftRow(key) {
+    return (state.draftStates || []).find(r => r.draft === key) || null;
+  }
+  // El admin registra el inicio del Draft de la Jornada en cuanto se termina
+  // (así las 24 h no cambian si después se corrige un resultado).
+  let draftStartSaving = false;
+  function ensureDraftStarted() {
+    if (!isAdmin || draftStartSaving || !state) return;
+    const idx = lastFinishedIndex();
+    if (idx < 1 || idx > state.jornadas.length - 2) return;
+    const key = state.jornadas[idx].label;
+    if (draftRow(key)) return;
+    draftStartSaving = true;
+    sb.from("draft_states").insert({ season_id: state.season.id, draft: key })
+      .then(() => { draftStartSaving = false; scheduleReload(); }, () => { draftStartSaving = false; });
+  }
+
+  // Draft de una Jornada (J1–J10), simulado en orden cronológico:
+  //  · Fast Track: desde que termina la Jornada, sin reloj, hasta que alguien lo
+  //    termina (Mercado cerrado, en pausa) o llega el lunes 00:00.
+  //  · Con reloj: desde el lunes 00:00 (o desde el inicio si la Jornada se
+  //    terminó después), 24 h por turno contadas desde la acción anterior; si
+  //    se agotan, el turno se pierde como un pase.
+  // Devuelve { st (null si terminó), timeouts: [{playerId, at, round}] }.
+  function jornadaDraftSim(j, now) {
+    now = now || Date.now();
+    const key = j.label, rounds = JORNADA_DRAFT_ROUNDS;
+    const snap = generalTable().snapshots[j.label];
+    if (!snap) return { st: null, timeouts: [] };
+    const order = state.players.map(p => p.id).sort((a, b) => snap.rank[a] - snap.rank[b]);
+    const n = order.length, total = n * rounds;
+    const reversed = order.slice().reverse();
+    const turnAt = k => (Math.floor(k / n) % 2 === 0 ? reversed : order)[k % n];
+    const row = draftRow(key);
+    const t0 = [row && row.started_at, j.updatedAt].map(v => v ? Date.parse(v) : NaN).find(v => !isNaN(v)) || now;
+    const monday = draftMondayAfter(j.playDate, t0);
+    const ftEnd = row && row.fast_track_ended_at ? Date.parse(row.fast_track_ended_at) : null;
+    const clockStart = Math.max(monday, t0);
+    const lost = {};
+    Object.entries((penaltiesByJornada()[j.id]) || {}).forEach(([id, x]) => { if (x.picks) lost[id] = Math.min(x.picks, rounds); });
+    const events = [];
+    (state.purchases || []).forEach(pu => { if (pu.draft === key) events.push({ id: pu.player_id, at: Date.parse(pu.created_at) }); });
+    (state.passes || []).forEach(ps => { if (ps.draft === key) events.push({ id: ps.player_id, at: Date.parse(ps.created_at) }); });
+    events.sort((a, b) => a.at - b.at);
+    let k = 0, turnStart = t0;
+    const banked = {}, timeouts = [];
+    const settle = () => {
+      while (k < total) {
+        const id = turnAt(k);
+        if (lost[id] > 0) { lost[id]--; k++; continue; }
+        if (banked[id] > 0) { banked[id]--; k++; continue; }
+        break;
+      }
+    };
+    const expire = (t) => {
+      while (k < total) {
+        const deadline = Math.max(turnStart, clockStart) + TURN_MS;
+        if (deadline > t) break;
+        timeouts.push({ playerId: turnAt(k), at: new Date(deadline).toISOString(), round: Math.floor(k / n) + 1 });
+        k++; turnStart = deadline; settle();
+      }
+    };
+    settle();
+    events.forEach(ev => {
+      expire(ev.at);
+      if (k >= total) return;
+      if (turnAt(k) === ev.id) { k++; turnStart = Math.max(turnStart, ev.at); settle(); }
+      else banked[ev.id] = (banked[ev.id] || 0) + 1;
+    });
+    expire(now);
+    if (k >= total) return { st: null, timeouts };
+    let mode = "clock";
+    if (now < clockStart) mode = ftEnd && ftEnd <= now ? "paused" : "fast";
+    const lostShown = {};
+    Object.entries((penaltiesByJornada()[j.id]) || {}).forEach(([id, x]) => { if (x.picks) lostShown[id] = Math.min(x.picks, rounds); });
+    // Quién sigue: salta los turnos perdidos por penalización o ya adelantados.
+    const nextId = (() => {
+      const l = Object.assign({}, lost), bk = Object.assign({}, banked);
+      for (let q = k + 1; q < total; q++) {
+        const id = turnAt(q);
+        if (l[id] > 0) { l[id]--; continue; }
+        if (bk[id] > 0) { bk[id]--; continue; }
+        return id;
+      }
+      return null;
+    })();
+    return {
+      st: {
+        round: Math.floor(k / n) + 1, rounds, pick: k + 1, total, playerId: turnAt(k), nextId, lost: lostShown,
+        mode, resumeAt: clockStart, deadline: mode === "clock" ? Math.max(turnStart, clockStart) + TURN_MS : null
+      },
+      timeouts
+    };
+  }
+  // Turnos perdidos por tiempo en todos los Drafts de Jornada (para Transacciones).
+  function draftTimeouts() {
+    const out = [];
+    const last = lastFinishedIndex();
+    state.jornadas.forEach((j, i) => {
+      if (i < 1 || i > last || i > state.jornadas.length - 2) return;
+      jornadaDraftSim(j).timeouts.forEach(t => out.push(Object.assign({ key: j.label }, t)));
+    });
+    return out;
+  }
+  async function endFastTrack() {
+    const st = marketStatus();
+    if (st.phase !== "draft" || st.mode !== "fast") return;
+    if (!isAdmin && !myPlayerIds.includes(st.playerId)) return;
+    if (!confirm("¿Terminar el Fast Track del " + st.title + "? El Mercado se cierra y el Draft sigue el " + formatCloseAt(new Date(st.resumeAt)) + " con el turno de " + playerName(st.playerId) + " (24 h por turno).")) return;
+    if (!draftRow(st.key) && isAdmin) await sb.from("draft_states").insert({ season_id: state.season.id, draft: st.key });
+    const { error } = await sb.rpc("end_fast_track", { p_season: state.season.id, p_draft: st.key, p_player: st.playerId });
+    if (error) showToast("No se pudo terminar el Fast Track.");
+    await loadSeasonData(); render();
+  }
+  function formatLeft(ms) {
+    if (ms <= 0) return "0 min";
+    const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    return (h ? h + " h " : "") + m + " min";
+  }
 
   // Fase actual del Mercado:
   //  waiting  → aún no termina J0
@@ -1970,14 +2123,16 @@
     const initial = draftState("initial", state.jornadas[0].label, SQUAD_SIZE);
     if (initial) return { phase: "draft", key: "initial", title: "Draft inicial", canPass: true, ...initial };
     const lastJ = state.jornadas[last];
-    if (last >= 1 && last <= state.jornadas.length - 2) {
-      const d = draftState(lastJ.label, lastJ.label, JORNADA_DRAFT_ROUNDS);
-      if (d) return { phase: "draft", key: lastJ.label, title: "Draft de la " + lastJ.label, canPass: true, ...d };
-    }
     const nextJ = state.jornadas[last + 1];
     if (!nextJ) return { phase: "closed", reason: "season" };
     const closeAt = marketCloseAt(nextJ.playDate);
+    // Al cierre del Mercado, los turnos que falten del Draft se pierden.
     if (closeAt && Date.now() > closeAt.getTime()) return { phase: "closed", reason: "deadline", nextLabel: nextJ.label };
+    if (last >= 1) {
+      const d = jornadaDraftSim(lastJ).st;
+      if (d && d.mode === "paused") return { phase: "paused", key: lastJ.label, title: "Draft de la " + lastJ.label, ...d };
+      if (d) return { phase: "draft", key: lastJ.label, title: (d.mode === "fast" ? "Fast Track Draft de la " : "Draft de la ") + lastJ.label, canPass: true, ...d };
+    }
     return { phase: "open", closeAt, nextLabel: nextJ.label };
   }
   function marketAllowsTrades(st) { return st.phase === "draft" || st.phase === "open"; }
@@ -2224,6 +2379,7 @@
         <p>Cada player arma un equipo de <strong>${SQUAD_SIZE} jugadores</strong> (11 titulares + 3 de banca) comprándolos en el Mercado con sus FIFA Coins. Saldo = ${fcFormatted(INITIAL_BUDGET)} iniciales + FC ganadas en las Jornadas − compras.</p>
         <p>Valor de un jugador = RAT + bono de pierna débil (WF 3★ +1, 4★ +2, 5★ +4) + bono de skills (SM 3★ +1, 4★ +2, 5★ +5).</p>
         <p><strong>Draft inicial:</strong> empieza al terminar la J0. Se compra uno a uno en formato snake: la primera ronda va del último al primer lugar de la Tabla General, la segunda del primero al último, y así sucesivamente. Un jugador comprado ya no está disponible.</p>
+        <p><strong>Fast Track y reloj del Draft de la Jornada:</strong> en cuanto termina la Jornada empieza el <strong>Fast Track</strong>: el Draft corre sin límite de tiempo. Si quien está en turno no va a comprar, él o el admin terminan el Fast Track; el Mercado se cierra y el Draft sigue el lunes 00:00 (hora del centro de México) posterior a la fecha de la Jornada, en ese mismo turno. Desde el lunes, cada turno tiene <strong>24 horas</strong> contadas desde la compra o pase anterior; si se agotan, el turno se pierde. Al completar los 2 turnos de todos se abre el Mercado; los turnos que falten al cierre del Mercado (domingo 11:59 pm) se pierden. El Draft inicial no tiene Fast Track ni reloj.</p>
         <p><strong>Draft de la Jornada:</strong> al terminar cada Jornada de la J1 a la J10 hay un Draft de una sola vuelta snake (del último al primero y del primero al último de la Tabla General): cada quien tiene 2 turnos. En cualquier Draft (inicial o de Jornada) se puede pasar el turno; quien pase en el Draft inicial completa sus 14 jugadores después.</p>
         <p><strong>Mercado abierto:</strong> al terminar el Draft, cualquiera compra y vende en cualquier orden hasta el domingo a las 11:59 pm (hora del centro de México) previo a la fecha de la siguiente Jornada. Desde ese momento y hasta que termina la Jornada, el Mercado está cerrado.</p>
         <p><strong>Desbloqueo por RAT:</strong> tras la J0 se pueden comprar jugadores de RAT 84 o menos. Al terminar cada Jornada se desbloquea el siguiente nivel: J1 → RAT 85, J2 → 86, J3 → 87, J4 → 88, J5 → 89, J6 → 90, J7 → 91 y desde la J8 todos los jugadores.</p>
@@ -3338,6 +3494,7 @@
       if (pu.sold_at) tx.push({ at: pu.sold_at, seq: 1000, playerId: pu.player_id, kind: "venta", detail: "vendió a " + pu.card_name + " (97% de " + fcPlain(pu.price) + ")", amount: Number(pu.sale_amount) || 0 });
     });
     (state.passes || []).forEach(ps => tx.push({ at: ps.created_at, seq: 1000, playerId: ps.player_id, kind: "pase", detail: "pasó su turno · " + draftLabel(ps.draft), amount: 0 }));
+    draftTimeouts().forEach(t => tx.push({ at: t.at, seq: 1000, playerId: t.playerId, kind: "pase", detail: "perdió su turno (se agotaron sus 24 h) · " + draftLabel(t.key), amount: 0 }));
     penaltyFaults().active.filter(f => f.sanction.pts || f.sanction.picks).forEach(f => tx.push({
       at: f.at, seq: 1000, playerId: f.playerId, kind: "penalizacion", amount: 0,
       detail: PEN_KINDS[f.kind].label.toLowerCase() + " (" + f.n + "ª falta, " + f.jornada.label + "): " + sanctionText(f.sanction, f.jornada)
@@ -3414,6 +3571,10 @@
       <span>Compras y ventas libres.</span>
       <span class="muted">${st.closeAt ? "Cierra el " + escapeHtml(formatCloseAt(st.closeAt)) + " (hora del centro de México)" : "Sin fecha de cierre: captura la fecha de la " + st.nextLabel + " en Torneo."}</span>
     </div>`;
+    if (st.phase === "paused") return `<div class="draft-banner closed">
+      <span class="draft-tag closed">Mercado cerrado</span>
+      <span>Se terminó el Fast Track del ${escapeHtml(st.title)}. El Draft sigue el <strong>${escapeHtml(formatCloseAt(new Date(st.resumeAt)))}</strong> con el turno de <strong>${escapeHtml(playerName(st.playerId))}</strong> (24 h por turno).</span>
+    </div>`;
     if (st.phase === "closed") return `<div class="draft-banner closed">
       <span class="draft-tag closed">Mercado cerrado</span>
       <span class="muted">${st.reason === "season" ? "Temporada terminada." : "Reabre al terminar la " + st.nextLabel + " con su Draft."}</span>
@@ -3424,6 +3585,9 @@
       <span>Ronda <strong>${st.round}</strong>/${st.rounds} · Selección <strong>${st.pick}</strong>/${st.total}</span>
       <span class="draft-turn">Turno de: <strong>${escapeHtml(playerName(st.playerId))}</strong> <span class="muted">(${fcFormatted(fin[st.playerId].balance)} · ${fin[st.playerId].count}/${SQUAD_SIZE})</span></span>
       ${st.nextId ? `<span class="muted">Sigue: ${escapeHtml(playerName(st.nextId))}</span>` : ""}
+      ${st.mode === "fast" ? `<span class="draft-clock">⚡ Sin límite de tiempo. Si no vas a comprar, puedes terminar el Fast Track: el Mercado se cierra y el Draft sigue el ${escapeHtml(formatCloseAt(new Date(st.resumeAt)))} con 24 h por turno.</span>` : ""}
+      ${st.mode === "clock" ? `<span class="draft-clock">⏳ Le quedan <strong id="draft-left">${formatLeft(st.deadline - Date.now())}</strong> (hasta el ${escapeHtml(formatCloseAt(new Date(st.deadline)))}). Si no compra ni pasa, pierde el turno.</span>` : ""}
+      ${st.mode === "fast" && (isAdmin || myPlayerIds.includes(st.playerId)) ? `<button class="btn-secondary pass-btn" data-action="end-fast-track">Terminar Fast Track</button>` : ""}
       ${st.canPass && tradePerms(st.playerId, st).pass ? `<button class="btn-secondary pass-btn" data-action="draft-pass">Pasar turno</button>` : ""}
       ${!isAdmin && myPlayerIds.includes(st.playerId) ? `<span class="my-turn">👉 ¡Es tu turno! Compra 1 jugador o pasa; también puedes vender.</span>` : ""}
       ${st.lost && Object.keys(st.lost).length ? `<span class="pen-note">🚨 Penalización: ${Object.entries(st.lost).map(([id, n]) => `<strong>${escapeHtml(playerName(id))}</strong> pierde ${n === 1 ? "su 1er turno" : "sus " + n + " primeros turnos"}`).join(" · ")} de este Draft (se saltan solos).</span>` : ""}
@@ -3718,6 +3882,7 @@
       case "undo-purchase": undoPurchase(el.dataset.purchase); break;
       case "sell-player": sellPlayer(el.dataset.purchase); break;
       case "draft-pass": passDraftTurn(); break;
+      case "end-fast-track": endFastTrack(); break;
       case "open-help": helpOpen = true; render(); break;
       case "close-help": helpOpen = false; render(); break;
       case "download-backup": downloadBackup(); break;
