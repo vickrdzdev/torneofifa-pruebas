@@ -503,8 +503,7 @@
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 10px 0; font-size: 14px; }
   .buy-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .buy-head-info { min-width: 0; flex: 1; }
-  .buy-photo { width: 96px; height: 96px; object-fit: contain; flex-shrink: 0; margin-top: 30px; }
-  @media (max-width: 420px) { .buy-photo { width: 76px; height: 76px; } }
+  .buy-photo { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; margin-top: 34px; }
   .pager-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .pager-num { min-width: 64px; text-align: center; }
   @media (max-width: 640px) { .pager .btn-secondary { padding: 7px 12px; } .pg-lbl { display: none; } }
@@ -3658,18 +3657,11 @@
 
   /* ============================== módulo: equipos ============================== */
   const PHOTO_BASE = "https://cdn3.futbin.com/content/fifa27/img/players/";
-  // Foto grande (modal de compra): las de Futbin son miniaturas de 51 px firmadas, así que
-  // primero se intenta el retrato oficial de EA (mismo ID) y si no existe se usa la de Futbin.
+  // Foto del modal de compra: Futbin solo da miniaturas firmadas de 51 px (no se puede pedir
+  // otro tamaño) y EA/SoFIFA bloquean el acceso directo, así que se muestra chica para no pixelarla.
   function bigPhotoHtml(m) {
     if (!m || !m.photo) return "";
-    const id = m.photo.split(".")[0];
-    const urls = [];
-    if (/^\d+$/.test(id)) {
-      const ea = v => "https://ratings-images-prod.pulse.ea.com/" + v + "/full/player-portraits/p" + id + ".png";
-      urls.push(ea("FC27"), ea("FC26"));
-    }
-    urls.push(PHOTO_BASE + m.photo);
-    return `<img class="buy-photo" src="${escapeHtml(urls[0])}" data-next="${escapeHtml(urls.slice(1).join(" "))}" alt="" width="96" height="96" referrerpolicy="no-referrer" onerror="const n=(this.dataset.next||'').split(' ').filter(Boolean);if(n.length){this.dataset.next=n.slice(1).join(' ');this.src=n[0];}else{this.style.display='none';}">`;
+    return `<img class="buy-photo" src="${PHOTO_BASE}${escapeHtml(m.photo)}" alt="" width="64" height="64" referrerpolicy="no-referrer" onerror="this.style.display='none'">`;
   }
   function playerPhotoHtml(cardId, size) {
     const m = market && market.byId ? market.byId[cardId] : null;
