@@ -3658,6 +3658,20 @@
 
   /* ============================== módulo: equipos ============================== */
   const PHOTO_BASE = "https://cdn3.futbin.com/content/fifa27/img/players/";
+  // Foto grande (modal de compra): las de Futbin son miniaturas de 51 px firmadas, así que
+  // primero se intenta SoFIFA (240 px, mismo ID de EA) y si no existe se usa la de Futbin.
+  function bigPhotoHtml(m) {
+    if (!m || !m.photo) return "";
+    const id = m.photo.split(".")[0];
+    const urls = [];
+    if (/^\d+$/.test(id)) {
+      const pad = String(id).padStart(6, "0");
+      const path = "https://cdn.sofifa.net/players/" + pad.slice(0, 3) + "/" + pad.slice(3) + "/";
+      urls.push(path + "27_240.png", path + "26_240.png");
+    }
+    urls.push(PHOTO_BASE + m.photo);
+    return `<img class="buy-photo" src="${escapeHtml(urls[0])}" data-next="${escapeHtml(urls.slice(1).join(" "))}" alt="" width="96" height="96" referrerpolicy="no-referrer" onerror="const n=(this.dataset.next||'').split(' ').filter(Boolean);if(n.length){this.dataset.next=n.slice(1).join(' ');this.src=n[0];}else{this.style.display='none';}">`;
+  }
   function playerPhotoHtml(cardId, size) {
     const m = market && market.byId ? market.byId[cardId] : null;
     if (!m || !m.photo) return `<span class="photo-ph" style="width:${size}px;height:${size}px"></span>`;
@@ -4043,7 +4057,7 @@
             <p class="muted" style="margin-top:-4px;">${escapeHtml(m.pos)} · RAT ${m.rat} · WF ${m.wf}★ · SM ${m.sm}★</p>
             <p>Valor: RAT ${m.rat} + WF ${wfB} + SM ${smB} = <strong class="fc-text">${fcFormatted(m.price)}</strong></p>
           </div>
-          ${m.photo ? `<img class="buy-photo" src="${PHOTO_BASE}${escapeHtml(m.photo.split("?")[0])}" data-fallback="${PHOTO_BASE}${escapeHtml(m.photo)}" alt="" width="96" height="96" referrerpolicy="no-referrer" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.dataset.fallback='';}else{this.style.display='none';}">` : ""}
+          ${bigPhotoHtml(m)}
         </div>
         <h4>${isAdmin ? "¿Para qué equipo?" : "Tu equipo"}</h4>
         <div class="team-pick">
