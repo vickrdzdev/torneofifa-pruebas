@@ -4029,7 +4029,9 @@
     const turn = st.phase === "draft" ? { status: "active", playerId: st.playerId } : { status: "none" };
     const isFull = id => fin[id].count >= SQUAD_SIZE;
     // El admin elige cualquier equipo; un player solo los suyos que puedan comprar ahora.
-    const teams = state.players.filter(p => tradePerms(p.id, st).buy);
+    // Si es el turno de un admin en el draft, compra para su propio equipo (sin mostrar a los demás).
+    const ownTurn = turn.status === "active" && myPlayerIds.includes(turn.playerId);
+    const teams = state.players.filter(p => tradePerms(p.id, st).buy && (!ownTurn || p.id === turn.playerId));
     if (!teams.length) return "";
     if (!buyTeamId || isFull(buyTeamId) || !teams.some(p => p.id === buyTeamId)) {
       const withRoom = teams.find(p => !isFull(p.id));
@@ -4046,7 +4048,7 @@
         <p class="muted" style="margin:-6px 0 8px;">${st.phase === "draft" ? escapeHtml(st.title) : "Mercado abierto"}</p>
         <p class="muted" style="margin-top:-4px;">${escapeHtml(m.pos)} · RAT ${m.rat} · WF ${m.wf}★ · SM ${m.sm}★</p>
         <p>Valor: RAT ${m.rat} + WF ${wfB} + SM ${smB} = <strong class="fc-text">${fcFormatted(m.price)}</strong></p>
-        <h4>${isAdmin ? "¿Para qué equipo?" : "Tu equipo"}</h4>
+        <h4>${isAdmin && !ownTurn ? "¿Para qué equipo?" : "Tu equipo"}</h4>
         <div class="team-pick">
           ${teams.map(p => `
             <button class="team-opt ${buyTeamId === p.id ? "active" : ""} ${isFull(p.id) ? "full" : ""}" data-action="buy-pick-team" data-team="${p.id}" ${isFull(p.id) ? "disabled" : ""}>
@@ -4055,7 +4057,7 @@
             </button>`).join("")}
         </div>
         <p>Saldo después de la compra: <strong class="${after < 0 ? "neg" : ""}">${fcFormatted(after)}</strong></p>
-        ${full ? `<p class="attend-warn">${isAdmin ? "Todos los equipos ya tienen" : "Tu equipo ya tiene"} ${SQUAD_SIZE} jugadores.</p>`
+        ${full ? `<p class="attend-warn">${isAdmin && !ownTurn ? "Todos los equipos ya tienen" : "Tu equipo ya tiene"} ${SQUAD_SIZE} jugadores.</p>`
           : after < 0 ? `<p class="attend-warn">${escapeHtml(playerName(buyTeamId))} no tiene saldo suficiente para este jugador.</p>` : ""}
         <div class="modal-close-row" style="gap:10px;">
           <button class="btn-secondary" data-action="close-buy">Cancelar</button>
