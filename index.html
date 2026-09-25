@@ -500,7 +500,7 @@
   .market-controls #market-search { flex: 1 1 260px; }
   .market-controls select.text-input { flex: 0 0 auto; }
   .check-inline { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); white-space: nowrap; }
-  .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; font-size: 14px; }
+  .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 10px 0; font-size: 14px; }
   .pager-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .pager-num { min-width: 64px; text-align: center; }
   @media (max-width: 640px) { .pager .btn-secondary { padding: 7px 12px; } .pg-lbl { display: none; } }
@@ -3941,7 +3941,6 @@
     const cap = ratCap();
     const pager = `
       <div class="pager">
-        <span class="muted">${list.length.toLocaleString("es-MX")} jugadores</span>
         <span class="pager-btns">
           <button class="btn-secondary" title="Primera página" data-action="market-page-to" data-page="first" ${marketPage === 0 ? "disabled" : ""}>«<span class="pg-lbl"> Primera</span></button>
           <button class="btn-secondary" data-action="market-page" data-dir="-1" ${marketPage === 0 ? "disabled" : ""}>‹<span class="pg-lbl"> Anterior</span></button>
@@ -4003,7 +4002,6 @@
           <label class="check-inline"><input type="checkbox" id="market-available" ${marketOnlyAvailable ? "checked" : ""}> Solo disponibles</label>
         </div>
         <p class="qual-note" style="margin:0 0 4px;">🔓 ${escapeHtml(unlockNote())}</p>
-        <p class="qual-note" style="margin:0 0 4px;">Valor = RAT + WF (3★ +1 · 4★ +2 · 5★ +4) + SM (3★ +1 · 4★ +2 · 5★ +5)</p>
         <div id="market-results">${marketResultsHtml()}</div>
       </div>`;
   }
