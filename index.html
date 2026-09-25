@@ -1487,14 +1487,17 @@
   function matchCardHtml(m, jornadaId, isKnockout) {
     const goalAction = isKnockout ? "ko-goal" : "group-goal";
     const pickAction = isKnockout ? "ko-pk" : "group-pk";
+    // Escudos en los partidos desde la J1 (en la J0 se juega con equipos estándar).
+    const jj = state.jornadas.find(x => x.id === jornadaId);
+    const logo = id => jj && jj.jornada_number > 0 ? teamLogoHtml(id, 24) : "";
     return `
       <div class="match-card">
         <div class="match-side home">
-          <span class="match-name">${escapeHtml(playerName(m.homeId))}</span>
+          ${logo(m.homeId)}<span class="match-name">${escapeHtml(playerName(m.homeId))}</span>
         </div>
         ${scoreInputsHtml(m, goalAction, jornadaId)}
         <div class="match-side away">
-          <span class="match-name">${escapeHtml(playerName(m.awayId))}</span>
+          ${logo(m.awayId)}<span class="match-name">${escapeHtml(playerName(m.awayId))}</span>
         </div>
       </div>
       ${shootoutHtml(m, jornadaId, pickAction, isKnockout)}
