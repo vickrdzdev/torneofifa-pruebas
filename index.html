@@ -2616,8 +2616,7 @@
     try { await sb.from("notifications").delete().like("key", prefix + "%").is("sent_at", null); } catch (e) {}
     await queueNotifs(rows.filter(r => r.at > Date.now()));
   }
-  // En notificaciones no se puede dibujar la ϝ (solo texto): se escribe con palabras.
-  const FC_TXT = n => fcNumber(n) + " FIFA Coins";
+  const FC_TXT = n => "ϝ" + fcNumber(n);
   function shortDate(ms) {
     return new Date(ms).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
   }
@@ -4102,7 +4101,7 @@
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
     await loadSeasonData(); render();
     if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", image: cardImage(pu.card_id),
-      title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + fcNumber(pu.price) + "). " + pu.card_name + " regresa al Mercado." }]);
+      title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado." }]);
   }
   async function undoPurchase(purchaseId) {
     if (!isAdmin) return;
