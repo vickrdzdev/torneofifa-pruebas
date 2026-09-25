@@ -390,6 +390,26 @@
   table.h2h td.pos { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
   table.h2h td.neg { background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
 
+  /* ---------- premios ---------- */
+  .prize-pos { color: var(--accent); font-weight: 800; white-space: nowrap; }
+  .prize-neg { color: var(--red); font-weight: 800; white-space: nowrap; }
+  .prize-pend { color: var(--gold); font-weight: 700; }
+  table.prize-table td.place { font-family: var(--font-display); font-weight: 700; font-size: 18px; white-space: nowrap; }
+  table.prize-table td .tie { display: block; font-size: 11.5px; color: var(--text-muted); font-family: var(--font-body); font-weight: 600; }
+  .magna-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+  .magna-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+  .magna-form .text-input { padding: 8px 10px; font-size: 14px; }
+  .magna-form .btn-primary { width: auto; font-size: 16px; padding: 9px 18px; }
+  .prize-rules { font-size: 14px; line-height: 1.6; }
+  @media (max-width: 600px) {
+    table.prize-table th, table.prize-table td { padding: 9px 6px; }
+    table.prize-table td.place { font-size: 15px; }
+    table.prize-table td .tie { font-size: 10.5px; }
+    table.prize-table .prize-pos, table.prize-table .prize-neg { white-space: normal; }
+  }
+  .prize-rules p { margin: 0 0 10px; }
+  .prize-rules p:last-child { margin: 0; }
+
   /* ---------- penalizaciones ---------- */
   .pen-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; }
   .pen-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
@@ -605,6 +625,7 @@
   let luSaving = null;
   let accDrafts = {};
   let statsTab = "general";   // "general" | "resumen" | "h2h" | "recompensas" | "palmares"
+  let magnaDraft = null;      // selección de la Final Magna aún sin guardar
   let penPlayer = "";         // filtro del historial de Penalizaciones
   let penForm = { player: "", jornada: "", kind: "alineacion", note: "" };
   let penSaving = false;
@@ -2092,6 +2113,8 @@
         <p>Hay tres tipos de falta y cada uno se cuenta por separado: <strong>consola desactualizada</strong> (quien lleva consola no tiene los equipos al día), <strong>alineación</strong> (no subirla completa a tiempo) e <strong>impuntualidad</strong> (llegar después de las 9:15 pm en horario nocturno o de las 5:15 pm en vespertino).</p>
         <p>Consola (no aplica en la J0, que se juega con los equipos estándar del FIFA): 1ª falta −2 pts y pierde su 1er turno del Draft; 2ª en adelante −3 pts y pierde sus 2 turnos. Alineación: la 1ª es tolerancia; 2ª −2 pts y 1 turno; 3ª en adelante −3 pts y 2 turnos. Impuntualidad: la 1ª y 2ª son tolerancia; 3ª −2 pts y 1 turno; 4ª en adelante −3 pts y 2 turnos.</p>
         <p>Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y cuentan para las FIFA Coins. Los turnos se pierden en el Draft que sigue a esa Jornada y se saltan solos; el Mercado abierto se usa normalmente. El detalle está en 🚨 Penalizaciones.</p>
+        <h4>Premios</h4>
+        <p>Al terminar el torneo, según los Puntos Generales: Campeón gana $1,600 MXP, 2° gana $1,000, 3° gana $500, 4° paga $100, 5° paga $200, 6° paga $300 y 7° paga $400. Empate en el 1° lugar: Final Magna (2 players) o Mini Torneo Magno (3 o más, todos contra todos, local el mejor colocado en la Tabla General de la J10). Empate en otro lugar: se suman los premios de los lugares que ocupan y se dividen en partes iguales. El detalle está en 💰 Premios.</p>
         <h4>Tus datos</h4>
         <p>Todo se guarda en una base de datos real y se sincroniza al instante entre todos los que tengan la app abierta. Solo el admin edita el torneo; cada player puede iniciar sesión para subir su alineación, y cualquiera puede ver todo en vivo sin iniciar sesión.</p>
         <div class="modal-close-row"><button class="btn-secondary" data-action="close-help">Cerrar</button></div>
@@ -2139,7 +2162,8 @@
     { id: "transacciones", icon: "🧾", label: "Transacciones" },
     { id: "alineaciones", icon: "📋", label: "Alineaciones" },
     { id: "estadisticas", icon: "📊", label: "Estadísticas" },
-    { id: "penalizaciones", icon: "🚨", label: "Penalizaciones" }
+    { id: "penalizaciones", icon: "🚨", label: "Penalizaciones" },
+    { id: "premios", icon: "💰", label: "Premios" }
   ];
   function renderDashboard() {
     const app = $("#app");
@@ -2150,6 +2174,8 @@
       body = renderMarketModule(); wide = true;
     } else if (activeModule === "transacciones") {
       body = renderTransactionsModule();
+    } else if (activeModule === "premios") {
+      body = renderPrizesModule();
     } else if (activeModule === "penalizaciones") {
       body = renderPenaltiesModule();
     } else if (activeModule === "estadisticas") {
@@ -2188,6 +2214,144 @@
       ${buyModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
+  }
+
+  /* ============================== premios ============================== */
+  // Premio (+) o pago (−) en pesos por lugar final en Puntos Generales.
+  const PRIZES = [1600, 1000, 500, -100, -200, -300, -400];
+  const PRIZE_LABELS = ["Campeón", "2° lugar", "3° lugar", "4° lugar", "5° lugar", "6° lugar", "7° lugar"];
+  function moneyText(n) {
+    const a = Math.abs(n);
+    return (n < 0 ? "−" : n > 0 ? "+" : "") + "$" + a.toLocaleString("es-MX", { minimumFractionDigits: Number.isInteger(a) ? 0 : 2, maximumFractionDigits: 2 }) + " MXP";
+  }
+  function moneyHtml(n) {
+    return `<span class="${n < 0 ? "prize-neg" : "prize-pos"}">${n < 0 ? "Paga " : "Gana "}${moneyText(Math.abs(n)).slice(1)}</span>`;
+  }
+  function seasonFinished() {
+    const last = state.jornadas[state.jornadas.length - 1];
+    const r = last && jornadaRewards(last);
+    return !!(r && r.finalDone);
+  }
+  // Lugares finales: por Puntos Generales (sin el desempate de la Tabla General).
+  // Empate en el 1°: Final Magna (2 players) o Mini Torneo Magno (3 o más), cuyo
+  // resultado captura el admin. Empate en otro lugar: se suman los premios de los
+  // lugares que ocupan y se dividen en partes iguales.
+  function prizeStandings() {
+    const g = generalTable();
+    const rows = g.rows.slice();
+    const groups = [];
+    rows.forEach(r => {
+      const last = groups[groups.length - 1];
+      if (last && last.total === r.total) last.rows.push(r); else groups.push({ total: r.total, rows: [r] });
+    });
+    const out = [];
+    let pos = 0, magna = null;
+    groups.forEach((gr, gi) => {
+      const n = gr.rows.length;
+      if (gi === 0 && n > 1) {
+        const ids = gr.rows.map(r => r.playerId);
+        const order = state.season.magna_order || [];
+        const valid = order.length === n && ids.every(id => order.includes(id));
+        magna = { ids, type: n === 2 ? "Final Magna" : "Mini Torneo Magno", decided: valid };
+        if (valid) {
+          order.forEach((id, k) => out.push({ playerId: id, total: gr.total, place: k + 1, amount: PRIZES[k] || 0, magna: true }));
+        } else {
+          gr.rows.forEach(r => out.push({ playerId: r.playerId, total: gr.total, place: 1, placeTo: n, amount: null, magna: true }));
+        }
+      } else if (n > 1) {
+        const sum = PRIZES.slice(pos, pos + n).reduce((a, b) => a + b, 0);
+        gr.rows.forEach(r => out.push({ playerId: r.playerId, total: gr.total, place: pos + 1, placeTo: pos + n, amount: Math.round(sum / n * 100) / 100, tie: true }));
+      } else {
+        out.push({ playerId: gr.rows[0].playerId, total: gr.total, place: pos + 1, amount: PRIZES[pos] || 0 });
+      }
+      pos += n;
+    });
+    return { rows: out, magna, any: g.labels.length > 0 };
+  }
+  function renderPrizesModule() {
+    const finished = seasonFinished();
+    const ps = prizeStandings();
+    const placeHtml = r => {
+      if (r.placeTo) return `${r.place}°–${r.placeTo}°<span class="tie">${r.magna ? escapeHtml(ps.magna.type) : "empate"}</span>`;
+      return `${r.place === 1 ? "🏆 " : ""}${r.place}°${r.magna ? `<span class="tie">por ${escapeHtml(ps.magna.type)}</span>` : ""}`;
+    };
+    const amountHtml = r => {
+      if (r.amount == null) return `<span class="prize-pend">Por definir</span>`;
+      if (r.amount === 0) return `<span class="muted">$0</span>`;
+      return moneyHtml(r.amount) + (r.tie ? `<span class="pen-sub" style="white-space:normal">Premios del ${r.place}° al ${r.placeTo}° ÷ ${r.placeTo - r.place + 1}</span>` : "");
+    };
+    let banner;
+    if (!ps.any) banner = `<div class="draft-banner muted">🕒 Los premios se calculan con la Tabla General al terminar el torneo (J11). Todavía no hay Jornadas terminadas.</div>`;
+    else if (!finished) banner = `<div class="draft-banner open"><span class="draft-tag open">Proyección</span><span>Así quedarían los premios si el torneo terminara hoy. Son definitivos al terminar la Final de la ${escapeHtml(state.jornadas[state.jornadas.length - 1].label)}.</span></div>`;
+    else banner = `<div class="draft-banner"><span class="draft-tag">Torneo terminado</span><span>Premios definitivos según los Puntos Generales finales.</span></div>`;
+
+    let magnaHtml = "";
+    if (ps.magna && ps.any) {
+      const names = ps.magna.ids.map(id => escapeHtml(playerName(id))).join(", ");
+      const what = ps.magna.type === "Final Magna" ? "el Campeón" : "Campeón, 2° y 3° lugar";
+      if (finished && isAdmin) {
+        const cur = magnaDraft || (state.season.magna_order || []).filter(id => ps.magna.ids.includes(id));
+        magnaHtml = `<div class="card" style="padding:16px; margin-bottom:16px;">
+          <h3 style="margin:0 0 4px; font-family:var(--font-display); font-size:20px;">Resultado de la ${escapeHtml(ps.magna.type)}</h3>
+          <p class="attend-note" style="margin-bottom:12px;">Empate en el 1° lugar entre ${names}. Captura cómo terminaron para definir ${what}.</p>
+          <div class="magna-form">
+            ${ps.magna.ids.map((_, k) => `<label>${k + 1}° lugar<select class="text-input magna-select" data-k="${k}">
+              <option value="">—</option>
+              ${ps.magna.ids.map(id => `<option value="${id}" ${cur[k] === id ? "selected" : ""}>${escapeHtml(playerName(id))}</option>`).join("")}
+            </select></label>`).join("")}
+            <button class="btn-primary" data-action="save-magna">Guardar resultado</button>
+            ${ps.magna.decided ? `<button class="btn-secondary" data-action="clear-magna">Borrar resultado</button>` : ""}
+          </div>
+        </div>`;
+      } else if (!ps.magna.decided) {
+        magnaHtml = `<div class="draft-banner closed"><span class="draft-tag closed">${escapeHtml(ps.magna.type)}</span><span>Empate en el 1° lugar entre <strong>${names}</strong>. ${finished ? "El admin capturará el resultado." : "Si el torneo terminara hoy, se definiría " + what + " en la " + escapeHtml(ps.magna.type) + "."}</span></div>`;
+      }
+    }
+
+    const table = ps.any ? `
+      <div class="table-scroll">
+        <table class="standings compact prize-table">
+          <thead><tr><th>Lugar</th><th style="text-align:left">Player</th><th title="Puntos Generales">Pts</th><th style="text-align:left">Premio</th></tr></thead>
+          <tbody>${ps.rows.map(r => `<tr>
+            <td class="place">${placeHtml(r)}</td>
+            <td class="name-cell">${escapeHtml(playerName(r.playerId))}</td>
+            <td class="pts-cell">${r.total}</td>
+            <td style="text-align:left">${amountHtml(r)}</td>
+          </tr>`).join("")}</tbody>
+        </table>
+      </div>` : "";
+
+    const rules = `<div class="card prize-rules" style="padding:16px 18px;">
+        <p>${PRIZES.map((v, i) => `<strong>${PRIZE_LABELS[i]}:</strong> ${v > 0 ? "gana" : "paga"} $${Math.abs(v).toLocaleString("es-MX")} MXP`).join("<br>")}</p>
+        <p><strong>Empate en el 1° lugar:</strong> si 2 players empatan en Puntos Generales se juega una <strong>Final Magna</strong>; el ganador es el Campeón del Torneo y se lleva el premio. Si empatan 3 o más, se juega un <strong>Mini Torneo Magno</strong> todos contra todos, donde siempre es local el mejor colocado en la Tabla General de la Jornada anterior (J10); así se definen Campeón, 2° y 3° lugar.</p>
+        <p><strong>Empate en otro lugar:</strong> se suman los premios de ese lugar y del (o los) siguiente(s) y se dividen en partes iguales entre los players empatados.</p>
+      </div>`;
+
+    return `
+      <div class="section">
+        <div class="section-head"><h2>Premios</h2></div>
+        ${banner}
+        ${magnaHtml}
+        ${table}
+      </div>
+      <div class="section">
+        <div class="section-head"><h2>Reglas</h2></div>
+        ${rules}
+      </div>`;
+  }
+  async function saveMagna(clear) {
+    if (!isAdmin) return;
+    let order = null;
+    if (!clear) {
+      order = $all(".magna-select").sort((a, b) => a.dataset.k - b.dataset.k).map(x => x.value);
+      magnaDraft = order;
+      if (order.some(v => !v) || new Set(order).size !== order.length) { showToast("Elige un player distinto para cada lugar."); return; }
+    }
+    const { error } = await sb.from("seasons").update({ magna_order: order }).eq("id", state.season.id);
+    if (error) { showToast("No se pudo guardar el resultado."); return; }
+    magnaDraft = null;
+    await loadSeasonData(); render();
+    showToast(clear ? "Resultado borrado." : "Resultado guardado.");
   }
 
   /* ============================== penalizaciones ============================== */
@@ -3360,6 +3524,8 @@
       case "submit-login": submitLogin(); break;
       case "admin-logout": adminLogout(); break;
       case "add-penalty": addPenalty(); break;
+      case "save-magna": saveMagna(false); break;
+      case "clear-magna": if (confirm("¿Borrar el resultado de la " + (prizeStandings().magna || {}).type + "?")) saveMagna(true); break;
       case "waive-penalty": waivePenalty(el.dataset.j, el.dataset.p); break;
       case "delete-penalty": deletePenaltyRow(el.dataset.id, "¿Borrar esta falta? Se recalculan las penalizaciones."); break;
       case "restore-penalty": deletePenaltyRow(el.dataset.id, null); break;
@@ -3428,6 +3594,10 @@
     if (e.target.classList && e.target.classList.contains("console-select")) { setJornadaConsole(e.target.dataset.j, e.target.dataset.col, e.target.value); return; }
     if (e.target.classList && e.target.classList.contains("jdate-input")) { setJornadaDate(e.target.dataset.j, e.target.value); return; }
     if (e.target.id === "tx-player") { txPlayer = e.target.value; render(); return; }
+    if (e.target.classList && e.target.classList.contains("magna-select")) {
+      magnaDraft = $all(".magna-select").sort((a, b) => a.dataset.k - b.dataset.k).map(x => x.value);
+      return;
+    }
     if (e.target.id === "pen-filter") { penPlayer = e.target.value; render(); return; }
     if (e.target.id === "pen-player") { penForm.player = e.target.value; render(); return; }
     if (e.target.id === "pen-jornada") { penForm.jornada = e.target.value; render(); return; }
