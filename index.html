@@ -1324,6 +1324,15 @@
       loadSeasonData().then(render);
     }, 350);
   }
+  // Al volver a la app (desbloquear el celular, regresar de otra app o
+  // recuperar la red) se recargan los datos: mientras estaba en segundo plano
+  // la conexión en vivo pudo pausarse y perderse algún cambio.
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (hasSession && !loading && Date.now() - hiddenAt > 2000) scheduleReload();
+  });
+  window.addEventListener("online", () => { if (hasSession && !loading) scheduleReload(); });
   let realtimeChannel = null;
   function unsubscribeRealtime() {
     if (realtimeChannel) { try { sb.removeChannel(realtimeChannel); } catch (e) {} realtimeChannel = null; }
