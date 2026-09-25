@@ -165,6 +165,21 @@
   .attend-chip { display: flex; align-items: center; gap: 9px; background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; }
   .attend-chip input { width: 17px; height: 17px; accent-color: var(--accent); }
   .attend-chip.disabled { opacity: 0.55; }
+  table.reg-matrix { border-collapse: separate; border-spacing: 0; margin: 14px 0 18px; }
+  table.reg-matrix th, table.reg-matrix td { padding: 9px 10px; text-align: center; border-bottom: 1px solid var(--line); }
+  table.reg-matrix thead th { font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+  table.reg-matrix tbody th { text-align: left; font-size: 13.5px; font-weight: 600; white-space: nowrap; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+  table.reg-matrix tbody th small { display: block; font-weight: 500; color: var(--text-muted); font-size: 11.5px; }
+  table.reg-matrix tr:last-child th, table.reg-matrix tr:last-child td { border-bottom: none; }
+  table.reg-matrix input { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+  table.reg-matrix input:disabled { cursor: not-allowed; }
+  table.reg-matrix td.off { opacity: .35; }
+  @media (max-width: 600px) {
+    table.reg-matrix tbody th { white-space: normal; min-width: 108px; max-width: 120px; font-size: 12.5px; }
+    table.reg-matrix th, table.reg-matrix td { padding: 8px 7px; }
+  }
+  table.reg-matrix td.na { color: var(--text-muted); }
+  table.reg-matrix td.flag { background: color-mix(in srgb, var(--red) 10%, transparent); }
   .attend-note { font-size: 13px; color: var(--text-muted); margin: 0 0 4px; }
   .attend-warn { color: var(--red); font-weight: 600; }
   .lock-note { display: flex; align-items: center; gap: 6px; color: var(--gold); font-size: 12.5px; font-weight: 600; margin: 0 0 14px; }
@@ -588,7 +603,7 @@
   let accDrafts = {};
   let statsTab = "general";   // "general" | "resumen" | "h2h" | "recompensas" | "palmares"
   let penPlayer = "";         // filtro del historial de Penalizaciones
-  let penForm = { player: "", jornada: "", kind: "consola", note: "" };
+  let penForm = { player: "", jornada: "", kind: "alineacion", note: "" };
   let penSaving = false;
   let statsFilter = "all";    // "all" | "group" | "ko"
   let loading = true;
@@ -1020,7 +1035,11 @@
     if (j.matches.length > 0) return;
     const isActive = j.activeIds.includes(playerId);
     try {
-      if (isActive) await sb.from("jornada_attendance").delete().eq("jornada_id", jornadaId).eq("player_id", playerId);
+      if (isActive) {
+        await sb.from("jornada_attendance").delete().eq("jornada_id", jornadaId).eq("player_id", playerId);
+        // Quien no juega no puede llegar tarde ni tener la consola desactualizada.
+        await sb.from("penalties").delete().eq("jornada_id", jornadaId).eq("player_id", playerId).in("kind", ["retardo", "consola"]);
+      }
       else await sb.from("jornada_attendance").insert({ jornada_id: jornadaId, player_id: playerId });
     } catch (e) { showToast("No se pudo actualizar la asistencia."); }
     await loadSeasonData(); render();
@@ -1404,21 +1423,53 @@
   }
 
   /* ============================== render: jornada pane ============================== */
+  // Faltas de puntualidad y consola capturadas en la matriz de la Jornada.
+  function jornadaFlag(j, playerId, kind) {
+    return (state.penalties || []).some(r => r.jornada_id === j.id && r.player_id === playerId && r.kind === kind && !r.waived);
+  }
+  // Matriz de registro: columnas = players; renglones = asistencia, puntualidad
+  // y consola actualizada. Desmarcar puntualidad o consola registra la falta.
+  function registerMatrixHtml(j) {
+    const attendLocked = !isAdmin || j.matches.length > 0;
+    const consoles = [j.console1Id, j.console2Id].filter(Boolean);
+    const cell = (p, kind) => {
+      const present = j.activeIds.includes(p.id);
+      if (kind === "consola" && !consoles.includes(p.id)) return `<td class="na">—</td>`;
+      const bad = jornadaFlag(j, p.id, kind);
+      const dis = !isAdmin || !present;
+      return `<td class="${!present ? "off" : bad ? "flag" : ""}"><input type="checkbox" data-action="toggle-flag" data-kind="${kind}" data-j="${j.id}" data-p="${p.id}" ${bad ? "" : "checked"} ${dis ? "disabled" : ""} title="${escapeHtml(p.name)}"></td>`;
+    };
+    return `
+        <div class="table-scroll">
+          <table class="reg-matrix">
+            <thead><tr><th></th>${state.players.map(p => `<th>${escapeHtml(p.name)}</th>`).join("")}</tr></thead>
+            <tbody>
+              <tr><th>✅ Asistencia</th>${state.players.map(p => `<td><input type="checkbox" data-action="toggle-attendance" data-j="${j.id}" data-p="${p.id}" ${j.activeIds.includes(p.id) ? "checked" : ""} ${attendLocked ? "disabled" : ""} title="${escapeHtml(p.name)}"></td>`).join("")}</tr>
+              <tr><th>⏰ Puntualidad<small>Desmarcado = llegó tarde</small></th>${state.players.map(p => cell(p, "retardo")).join("")}</tr>
+              <tr><th>🎮 Consola actualizada<small>${consoles.length || !isAdmin ? "Solo Consola 1 y 2" : "Asigna Consola 1 y 2 arriba"}</small></th>${state.players.map(p => cell(p, "consola")).join("")}</tr>
+            </tbody>
+          </table>
+        </div>`;
+  }
+  async function toggleJornadaFlag(jornadaId, playerId, kind) {
+    if (!isAdmin) return;
+    const j = state.jornadas.find(x => x.id === jornadaId);
+    if (!j || !j.activeIds.includes(playerId)) return;
+    const res = jornadaFlag(j, playerId, kind)
+      ? await sb.from("penalties").delete().eq("jornada_id", jornadaId).eq("player_id", playerId).eq("kind", kind)
+      : await sb.from("penalties").insert({ season_id: state.season.id, jornada_id: jornadaId, player_id: playerId, kind, note: "Registrada en la " + j.label });
+    if (res.error) showToast("No se pudo guardar el cambio.");
+    await loadSeasonData(); render();
+  }
   function renderAttendanceStage(j) {
     const enough = j.activeIds.length >= 4;
     const locked = !isAdmin;
     return `
       <div class="card">
         <h2 style="font-family:var(--font-display);font-weight:700;font-size:20px;margin:0 0 4px;">Asistencia — ${j.label}</h2>
-        <p class="attend-note">Marca quiénes juegan esta Jornada (mínimo 4). El calendario y la Liguilla se generan según quién participe.</p>
+        <p class="attend-note">Marca quiénes juegan esta Jornada (mínimo 4). Si alguien llegó tarde o llevó la consola sin los equipos actualizados, desmarca su casilla: la falta se registra en 🚨 Penalizaciones. El calendario y la Liguilla se generan según quién participe.</p>
         ${locked ? `<p class="lock-note">🔒 Solo el admin puede editar la asistencia.</p>` : ""}
-        <div class="attend-list">
-          ${state.players.map(p => `
-            <label class="attend-chip ${locked ? "disabled" : ""}">
-              <input type="checkbox" data-action="toggle-attendance" data-j="${j.id}" data-p="${p.id}" ${j.activeIds.includes(p.id) ? "checked" : ""} ${locked ? "disabled" : ""}>
-              ${escapeHtml(p.name)}
-            </label>`).join("")}
-        </div>
+        ${registerMatrixHtml(j)}
         ${!enough && !locked ? '<p class="attend-warn">Selecciona al menos 4 players.</p>' : ""}
         ${!locked ? `<button class="btn-primary" data-action="generate-jornada" data-j="${j.id}" ${enough ? "" : "disabled"} style="max-width:280px;">Generar calendario</button>` : ""}
       </div>
@@ -2264,13 +2315,13 @@
       const sc = sanctionFor(penForm.kind, n);
       formHtml = `
         <div class="card" style="padding:16px; margin-bottom:18px;">
-          <h3 style="margin:0 0 12px; font-family:var(--font-display); font-size:20px;">Registrar falta</h3>
+          <h3 style="margin:0 0 4px; font-family:var(--font-display); font-size:20px;">Registrar falta de alineación</h3>
+          <p class="attend-note" style="margin-bottom:12px;">Las alineaciones tarde, incompletas o no subidas se registran solas; aquí van otros errores (ej. código equivocado). Los retardos y la consola se marcan en la matriz de asistencia de cada Jornada, en 🏆 Torneo.</p>
           <div class="pen-form">
             <label>Player<select class="text-input" id="pen-player">${state.players.map(p => `<option value="${p.id}" ${penForm.player === p.id ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>
             <label>Jornada<select class="text-input" id="pen-jornada">${state.jornadas.map(x => `<option value="${x.id}" ${penForm.jornada === x.id ? "selected" : ""}>${escapeHtml(x.label)}</option>`).join("")}</select></label>
-            <label>Tipo<select class="text-input" id="pen-kind">${Object.entries(PEN_KINDS).map(([k, v]) => `<option value="${k}" ${penForm.kind === k ? "selected" : ""}>${v.icon} ${v.label}</option>`).join("")}</select></label>
-            <label>Nota (opcional)<input class="text-input" id="pen-note" type="text" placeholder="Ej. llegó 9:40 pm" value="${escapeHtml(penForm.note)}"></label>
-            <p class="pen-preview">Sería su <strong>${n}ª falta</strong> de ${PEN_KINDS[penForm.kind].label.toLowerCase()}: ${sc.tolerance ? `<span class="pen-ok">tolerancia, sin penalización.</span>` : `<span class="pen-neg">${escapeHtml(sanctionText(sc, j))}.</span>`}${later ? ` <span class="muted">(Ya tiene faltas de este tipo en Jornadas posteriores; se recalcula su numeración.)</span>` : ""}${penForm.kind === "alineacion" ? ` <span class="muted">Las alineaciones tarde o incompletas ya se registran solas; usa esta opción para otros errores.</span>` : ""}</p>
+            <label>Nota (opcional)<input class="text-input" id="pen-note" type="text" placeholder="Ej. código equivocado" value="${escapeHtml(penForm.note)}"></label>
+            <p class="pen-preview">Sería su <strong>${n}ª falta</strong> de ${PEN_KINDS[penForm.kind].label.toLowerCase()}: ${sc.tolerance ? `<span class="pen-ok">tolerancia, sin penalización.</span>` : `<span class="pen-neg">${escapeHtml(sanctionText(sc, j))}.</span>`}${later ? ` <span class="muted">(Ya tiene faltas de este tipo en Jornadas posteriores; se recalcula su numeración.)</span>` : ""}</p>
             <button class="btn-primary" data-action="add-penalty" ${penSaving ? "disabled" : ""} style="grid-column: 1 / -1;">${penSaving ? "Guardando…" : "Registrar falta"}</button>
           </div>
         </div>`;
@@ -2331,7 +2382,7 @@
       <div class="section">
         <div class="section-head"><h2>Reglas</h2></div>
         ${rulesHtml}
-        <p class="st-foot">Cada tipo de falta se cuenta por separado. Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y afectan las FIFA Coins de esa Jornada. Los turnos se pierden en el Draft que sigue a esa Jornada (en la J0, el Draft inicial; la J11 no tiene Draft) y el Mercado abierto se puede usar normalmente. Si en una misma Jornada se juntan varias faltas, los puntos se suman y se pierden como máximo 2 turnos. Las alineaciones tarde, incompletas o no subidas cuentan solas al cerrar el plazo (salvo a quien faltó a la Jornada).</p>
+        <p class="st-foot">Cada tipo de falta se cuenta por separado. Los puntos se restan en la Tabla General en la Jornada de la falta (se puede quedar en negativo) y afectan las FIFA Coins de esa Jornada. Los turnos se pierden en el Draft que sigue a esa Jornada (en la J0, el Draft inicial; la J11 no tiene Draft) y el Mercado abierto se puede usar normalmente. Si en una misma Jornada se juntan varias faltas, los puntos se suman y se pierden como máximo 2 turnos. Las alineaciones tarde, incompletas o no subidas cuentan solas al cerrar el plazo (salvo a quien faltó a la Jornada). Los retardos y la consola desactualizada se registran desmarcando la casilla del player en la matriz de asistencia de la Jornada.</p>
       </div>`;
   }
   async function addPenalty() {
@@ -2787,8 +2838,14 @@
   }
   async function setJornadaConsole(jornadaId, col, value) {
     if (!isAdmin) return;
+    const j = state.jornadas.find(x => x.id === jornadaId);
+    const prev = j && j[col === "console1_id" ? "console1Id" : "console2Id"];
     const { error } = await sb.from("jornadas").update({ [col]: value || null }).eq("id", jornadaId);
     if (error) showToast("No se pudo guardar quién lleva consola.");
+    else if (prev && prev !== value && prev !== j[col === "console1_id" ? "console2Id" : "console1Id"]) {
+      // Si deja de llevar consola, su falta de consola en esta Jornada ya no aplica.
+      await sb.from("penalties").delete().eq("jornada_id", jornadaId).eq("player_id", prev).eq("kind", "consola");
+    }
     await loadSeasonData(); render();
   }
   async function setJornadaDate(jornadaId, value) {
@@ -2806,7 +2863,12 @@
 
     let body = "";
     if (j.matches.length === 0) body = jornadaDateHtml(j) + renderAttendanceStage(j);
-    else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
+    else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j) + (isAdmin ? `
+      <div class="section"><div class="card">
+        <h2 style="font-family:var(--font-display);font-weight:700;font-size:20px;margin:0 0 4px;">Registro de la ${j.label}</h2>
+        <p class="attend-note">La asistencia ya no cambia porque el calendario está generado; puntualidad y consola se pueden corregir aquí.</p>
+        ${registerMatrixHtml(j)}
+      </div></div>` : "");
 
     const tabs = `
           ${state.jornadas.map(jj => {
@@ -3258,6 +3320,7 @@
         break;
       }
       case "toggle-attendance": toggleAttendance(el.dataset.j, el.dataset.p); break;
+      case "toggle-flag": toggleJornadaFlag(el.dataset.j, el.dataset.p, el.dataset.kind); break;
       case "generate-jornada": generateJornada(el.dataset.j); break;
       case "generate-liguilla": generateLiguilla(el.dataset.j); break;
       case "group-pk": setGroupShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;
@@ -3357,7 +3420,6 @@
     if (e.target.id === "pen-filter") { penPlayer = e.target.value; render(); return; }
     if (e.target.id === "pen-player") { penForm.player = e.target.value; render(); return; }
     if (e.target.id === "pen-jornada") { penForm.jornada = e.target.value; render(); return; }
-    if (e.target.id === "pen-kind") { penForm.kind = e.target.value; render(); return; }
     if (e.target.id === "tx-kind") { txKind = e.target.value; render(); return; }
     if (e.target.id === "market-pos") { marketPos = e.target.value; marketPage = 0; refreshMarketResults(); return; }
     if (e.target.id === "market-available") { marketOnlyAvailable = e.target.checked; marketPage = 0; refreshMarketResults(); return; }
