@@ -276,14 +276,13 @@
   /* ---------- equipos ---------- */
   .team-head h2 { font-size: 38px; line-height: 1.05; }
   .team-logo { display: inline-block; object-fit: contain; flex: 0 0 auto; vertical-align: middle; }
-  .with-logo { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
   .team-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
   .team-title .team-sub { display: block; font-family: var(--font-body); font-size: 14px; font-weight: 600; color: var(--text-muted); margin-top: 2px; }
   .team-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 16px; padding: 12px 14px; }
   .team-edit .text-input { flex: 1 1 200px; padding: 8px 10px; font-size: 14px; }
   .team-edit .lu-file { padding: 8px 12px; }
   .team-edit .lbl { font-size: 12.5px; font-weight: 700; color: var(--text-muted); width: 100%; }
-  .champion-banner .name .team-logo { margin-right: 8px; }
+
   .team-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .stat-card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; }
   .stat-card .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; }
@@ -666,12 +665,6 @@
     const url = p && p.logo_path && (state.logoUrls || {})[p.logo_path];
     if (!url) return "";
     return `<img class="team-logo" src="${escapeHtml(url)}" alt="${escapeHtml(p.team_name || "")}" title="${escapeHtml(p.team_name || "")}" width="${size}" height="${size}" loading="lazy">`;
-  }
-  // Nombre del player con su escudo al lado (si tiene).
-  function playerLabelHtml(id, size) {
-    const logo = teamLogoHtml(id, size || 20);
-    const name = escapeHtml(playerName(id));
-    return logo ? `<span class="with-logo">${logo}<span>${name}</span></span>` : name;
   }
   function playerName(id) {
     const p = state.players.find(pl => pl.id === id);
@@ -1497,11 +1490,11 @@
     return `
       <div class="match-card">
         <div class="match-side home">
-          ${teamLogoHtml(m.homeId, 24)}<span class="match-name">${escapeHtml(playerName(m.homeId))}</span>
+          <span class="match-name">${escapeHtml(playerName(m.homeId))}</span>
         </div>
         ${scoreInputsHtml(m, goalAction, jornadaId)}
         <div class="match-side away">
-          ${teamLogoHtml(m.awayId, 24)}<span class="match-name">${escapeHtml(playerName(m.awayId))}</span>
+          <span class="match-name">${escapeHtml(playerName(m.awayId))}</span>
         </div>
       </div>
       ${shootoutHtml(m, jornadaId, pickAction, isKnockout)}
@@ -1512,7 +1505,7 @@
     const rows = standings.map(s => `
       <tr class="${s.rank <= qualifyCount ? "qualifies" : ""}">
         <td class="pos-cell">${s.rank}</td>
-        <td class="name-cell">${playerLabelHtml(s.playerId, 22)}</td>
+        <td class="name-cell">${escapeHtml(playerName(s.playerId))}</td>
         <td>${s.pj}</td><td>${s.pg}</td><td>${s.pe}</td><td>${s.pp}</td>
         <td>${s.gf}</td><td>${s.gc}</td><td>${s.gd > 0 ? "+" + s.gd : s.gd}</td>
         <td>${s.lc > 0 ? "+" + s.lc : "0"}</td>
@@ -1663,7 +1656,7 @@
       html += `<div class="champion-banner">
         <span class="trophy">🏆</span>
         <div class="label">Campeón de ${j.label}</div>
-        <div class="name">${teamLogoHtml(pf.championId, 40)}${escapeHtml(playerName(pf.championId))}</div>
+        <div class="name">${escapeHtml(playerName(pf.championId))}</div>
       </div>`;
     }
     html += `</div>`;
@@ -2056,7 +2049,7 @@
             <tr>
               <td class="pos-cell">${r.rank}</td>
               <td>${arrow(r.move)}</td>
-              <td class="name-cell">${playerLabelHtml(r.playerId, 22)}</td>
+              <td class="name-cell">${escapeHtml(playerName(r.playerId))}</td>
               ${g.labels.map(l => `<td>${r.perJ[l] != null ? r.perJ[l] : "–"}${r.penJ[l] ? `<span class="pen-mark" title="Incluye −${r.penJ[l]} por penalización">−${r.penJ[l]}</span>` : ""}</td>`).join("")}
               <td class="pts-cell">${r.total}</td>
             </tr>`).join("")}
