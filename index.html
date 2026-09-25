@@ -2798,14 +2798,14 @@
     const st = marketStatus();
     return { phase: st.phase, key: st.key, pick: st.pick, playerId: st.playerId, title: st.title, mode: st.mode };
   }
-  // Tras una compra/pase: avisa el cambio de turno o que se abrió el Mercado.
+  // Tras un pase: avisa el cambio de turno o que se abrió el Mercado.
   async function notifyDraftAdvance(before, actorId) {
     const after = draftSnapshot();
     const rows = [];
     if (before.phase === "draft" && after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
       const clock = after.mode === "clock" ? " Tienes 24 h." : "";
       rows.push(
-        { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick, exclude: after.playerId, url: "./?m=mercado", title: "🔄 Turno de " + playerName(after.playerId), body: "Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." },
+        { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick, exclude: [notifActor(actorId), after.playerId], url: "./?m=mercado", title: "➡️ " + playerName(actorId) + " pasó", body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." },
         { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick + ":me", target: after.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(actorId) + ". Comienza tu turno." + clock });
     } else if (before.phase === "draft" && after.phase === "open") {
       rows.push({ key: "open:" + state.season.id + ":" + before.key, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + before.title.replace("Fast Track ", "") + ". Compras y ventas libres." });
