@@ -2014,6 +2014,12 @@
   function draftRow(key) {
     return (state.draftStates || []).find(r => r.draft === key) || null;
   }
+  // Marca de cada arranque de un Draft para las claves de sus avisos: si un
+  // Draft se borra y se vuelve a iniciar, sus avisos se mandan de nuevo.
+  function draftRunTag(key) {
+    const row = draftRow(key);
+    return row && row.started_at ? ":" + Date.parse(row.started_at).toString(36) : "";
+  }
   // El admin registra el inicio del Draft de la Jornada en cuanto se termina
   // (así las 24 h no cambian si después se corrige un resultado).
   let draftStartSaving = false;
@@ -2248,8 +2254,8 @@
     const st = marketStatus();
     if (error || st.phase !== "draft") return;
     await queueNotifs([
-      { key: "draft0:" + state.season.id, exclude: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "Arranca " + playerName(st.playerId) + ". Cada turno tiene " + INITIAL_TURN_TXT + "." },
-      { key: "draft0:" + state.season.id + ":me", target: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "¡Es tu turno! Tienes " + INITIAL_TURN_TXT + " para comprar tu primer jugador o pasar." }]);
+      { key: "draft0:" + state.season.id + draftRunTag("initial"), exclude: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "Arranca " + playerName(st.playerId) + ". Cada turno tiene " + INITIAL_TURN_TXT + "." },
+      { key: "draft0:" + state.season.id + draftRunTag("initial") + ":me", target: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "¡Es tu turno! Tienes " + INITIAL_TURN_TXT + " para comprar tu primer jugador o pasar." }]);
     await syncDraftSchedule();
   }
   function endFtModalHtml() {
@@ -2956,7 +2962,7 @@
   // Draft inicial: avisos programados de turno perdido por tiempo (3 min).
   async function syncInitialSchedule() {
     if (!draftRow("initial")) return;
-    const prefix = "sched:initial:" + state.season.id + ":";
+    const prefix = "sched:initial:" + state.season.id + draftRunTag("initial") + ":";
     const rows = [];
     let t = Date.now();
     for (let guard = 0; guard < 30; guard++) {
@@ -3030,8 +3036,8 @@
     if (before.phase === "draft" && after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
       const clock = after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes " + INITIAL_TURN_TXT + "." : " Tienes " + INITIAL_TURN_TXT + ".") : "";
       rows.push(
-        { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick, exclude: [notifActor(actorId), after.playerId], url: "./?m=mercado", title: "➡️ " + playerName(actorId) + " pasó", body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." },
-        { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick + ":me", target: after.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(actorId) + ". Comienza tu turno." + clock });
+        { key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick, exclude: [notifActor(actorId), after.playerId], url: "./?m=mercado", title: "➡️ " + playerName(actorId) + " pasó", body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." },
+        { key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick + ":me", target: after.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(actorId) + ". Comienza tu turno." + clock });
     } else if (before.phase === "draft" && after.phase === "open") {
       rows.push({ key: "open:" + state.season.id + ":" + before.key, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + before.title.replace("Fast Track ", "") + ". Compras y ventas libres." });
     }
