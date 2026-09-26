@@ -2825,10 +2825,11 @@
     try { await sb.from("notifications").delete().like("key", prefix + "%").is("sent_at", null); } catch (e) {}
     await queueNotifs(rows.filter(r => r.at > Date.now()));
   }
-  // Quién hizo la operación (no se le avisa a sí mismo): el dueño del equipo si es su sesión;
-  // si un admin opera por otro equipo, se excluye al admin y el dueño sí recibe el aviso.
+  // Quién hizo la operación (no se le avisa a sí mismo): solo el dueño del equipo
+  // cuando opera desde su propia cuenta. Si un admin opera por otro equipo,
+  // el aviso le llega a todos (incluidos el admin y el dueño).
   function notifActor(teamId) {
-    return myPlayerIds.includes(teamId) ? teamId : (myPlayerIds[0] || null);
+    return myPlayerIds.includes(teamId) ? teamId : null;
   }
   const FC_TXT = n => "ϝ" + fcNumber(n);
   function shortDate(ms) {
