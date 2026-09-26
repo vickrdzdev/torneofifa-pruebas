@@ -376,6 +376,8 @@
   .icon-btn.bell-off { opacity: .55; }
   .my-turn { flex-basis: 100%; font-weight: 700; color: var(--accent); }
   .draft-clock { flex-basis: 100%; font-size: 13px; color: var(--text-muted); }
+  .draft-recover { flex-basis: 100%; font-size: 14px; background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 8px; padding: 6px 10px; }
+  .debt-note { flex-basis: 100%; font-size: 12.5px; }
   .draft-timer { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 13px; }
   .draft-timer strong { font-family: var(--font-display); font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
   .draft-timer.mine strong { color: var(--accent); }
@@ -2116,18 +2118,86 @@
   }
 
   // Draft inicial: arranca cuando un admin lo inicia (fila "initial" en
-  // draft_states) y cada turno dura 3 minutos desde la acción anterior.
+  // draft_states) y cada turno dura 3 minutos desde que empieza.
+  // Turnos pendientes: si alguien pasa o se le acaba el tiempo sin comprar,
+  // acumula 1 pendiente; en cada turno siguiente con pendientes puede elegir
+  // 2 jugadores (en los mismos 3 minutos) y, si completa las 2, recupera uno.
+  // Los turnos perdidos por penalización no se recuperan.
   const INITIAL_TURN_MS = 3 * 60 * 1000;
   function initialDraftSim(now) {
     now = now || Date.now();
     const row = draftRow("initial");
     const order = draftOrder(state.jornadas[0].label);
     if (!row || !order) return { st: null, timeouts: [] };
-    const t0 = Date.parse(row.started_at);
-    const sim = simulateClockDraft({ key: "initial", order, rounds: SQUAD_SIZE, lostMap: lostPicks(state.jornadas[0].id, SQUAD_SIZE),
-      t0, clockStart: t0, turnMs: INITIAL_TURN_MS, now });
-    if (sim.st) Object.assign(sim.st, { mode: "timer" });
-    return sim;
+    const key = "initial", rounds = SQUAD_SIZE, n = order.length, total = n * rounds;
+    const reversed = order.slice().reverse();
+    const turnAt = k => (Math.floor(k / n) % 2 === 0 ? reversed : order)[k % n];
+    const lostMap = lostPicks(state.jornadas[0].id, rounds), lost = Object.assign({}, lostMap);
+    const events = [];
+    (state.purchases || []).forEach(pu => { if (pu.draft === key) events.push({ type: "buy", id: pu.player_id, at: Date.parse(pu.created_at) }); });
+    (state.passes || []).forEach(ps => { if (ps.draft === key) events.push({ type: "pass", id: ps.player_id, at: Date.parse(ps.created_at) }); });
+    events.sort((a, b) => a.at - b.at);
+    const debt = {}, banked = {}, timeouts = [];
+    order.forEach(id => { debt[id] = 0; banked[id] = 0; });
+    let k = 0, turnStart = Date.parse(row.started_at), picks = 0, allow = 1;
+    const startTurn = (t) => {
+      while (k < total) {
+        const id = turnAt(k);
+        if (lost[id] > 0) { lost[id]--; k++; continue; }
+        if (banked[id] > 0) { banked[id]--; k++; continue; }
+        break;
+      }
+      turnStart = t; picks = 0;
+      allow = k < total && debt[turnAt(k)] > 0 ? 2 : 1;
+    };
+    // Cierra el turno en curso: sin compras suma un pendiente; con 2 de 2 recupera uno.
+    const endTurn = (t) => {
+      const id = turnAt(k);
+      if (picks === 0) debt[id]++;
+      else if (allow === 2 && picks === 2) debt[id]--;
+      k++; startTurn(t);
+    };
+    const expire = (t) => {
+      while (k < total && turnStart + INITIAL_TURN_MS <= t) {
+        const dl = turnStart + INITIAL_TURN_MS;
+        if (picks === 0) timeouts.push({ playerId: turnAt(k), at: new Date(dl).toISOString(), round: Math.floor(k / n) + 1 });
+        endTurn(dl);
+      }
+    };
+    startTurn(turnStart);
+    events.forEach(ev => {
+      expire(ev.at);
+      if (k >= total) return;
+      const cur = turnAt(k);
+      if (ev.id === cur) {
+        if (ev.type === "pass") endTurn(ev.at);
+        else if (++picks >= allow) endTurn(ev.at);
+      } else if (ev.type === "buy") {
+        // Compra fuera de turno (corrección del admin): primero salda un pendiente.
+        if (debt[ev.id] > 0) debt[ev.id]--; else banked[ev.id]++;
+      }
+    });
+    expire(now);
+    if (k >= total) return { st: null, timeouts };
+    const nextId = (() => {
+      const l = Object.assign({}, lost), bk = Object.assign({}, banked);
+      for (let q = k + 1; q < total; q++) {
+        const id = turnAt(q);
+        if (l[id] > 0) { l[id]--; continue; }
+        if (bk[id] > 0) { bk[id]--; continue; }
+        return id;
+      }
+      return null;
+    })();
+    const playerId = turnAt(k);
+    return {
+      st: {
+        round: Math.floor(k / n) + 1, rounds, pick: k + 1, total, playerId, nextId, lost: Object.assign({}, lostMap),
+        mode: "timer", deadline: turnStart + INITIAL_TURN_MS,
+        allow, picksDone: picks, debt: debt[playerId], debts: Object.assign({}, debt)
+      },
+      timeouts
+    };
   }
   // Turnos perdidos por tiempo en todos los Drafts de Jornada (para Transacciones).
   function draftTimeouts() {
@@ -2524,7 +2594,7 @@
         <h4>Equipos, Mercado y Draft</h4>
         <p>Cada player arma un equipo de <strong>${SQUAD_SIZE} jugadores</strong> (11 titulares + 3 de banca) comprándolos en el Mercado con sus FIFA Coins. Saldo = ${fcFormatted(INITIAL_BUDGET)} iniciales + FC ganadas en las Jornadas − compras.</p>
         <p>Valor de un jugador = RAT + bono de pierna débil (WF 3★ +1, 4★ +2, 5★ +4) + bono de skills (SM 3★ +1, 4★ +2, 5★ +5).</p>
-        <p><strong>Draft inicial:</strong> al terminar la J0, un admin lo inicia. Cada turno tiene <strong>3 minutos</strong> contados desde la compra o pase anterior; si se agotan, el turno se pierde y sigue el siguiente. Se compra uno a uno en formato snake: la primera ronda va del último al primer lugar de la Tabla General, la segunda del primero al último, y así sucesivamente. Un jugador comprado ya no está disponible.</p>
+        <p><strong>Draft inicial:</strong> al terminar la J0, un admin lo inicia. Cada turno tiene <strong>3 minutos</strong> contados desde la compra o pase anterior; si se agotan, el turno se pierde y sigue el siguiente. Quien pase o se quede sin tiempo sin comprar acumula un <strong>turno pendiente</strong>: en su siguiente turno puede elegir 2 jugadores dentro de los mismos 3 minutos para recuperarlo; si tiene varios pendientes, recupera uno por turno. Los turnos perdidos por penalización no se recuperan. Se compra uno a uno en formato snake: la primera ronda va del último al primer lugar de la Tabla General, la segunda del primero al último, y así sucesivamente. Un jugador comprado ya no está disponible.</p>
         <p><strong>Fast Track y reloj del Draft de la Jornada:</strong> en cuanto termina la Jornada empieza el <strong>Fast Track</strong>: el Draft corre sin límite de tiempo. Si quien está en turno no va a comprar, él o el admin terminan el Fast Track; el Mercado se cierra y el Draft sigue el lunes 00:00 (hora del centro de México) posterior a la fecha de la Jornada, en ese mismo turno. Desde el lunes, cada turno tiene <strong>24 horas</strong> contadas desde la compra o pase anterior; si se agotan, el turno se pierde. Al completar los 2 turnos de todos se abre el Mercado; los turnos que falten al cierre del Mercado (domingo 11:59 pm) se pierden. El Draft inicial no tiene Fast Track.</p>
         <p><strong>Draft de la Jornada:</strong> al terminar cada Jornada de la J1 a la J10 hay un Draft de una sola vuelta snake (del último al primero y del primero al último de la Tabla General): cada quien tiene 2 turnos. En cualquier Draft (inicial o de Jornada) se puede pasar el turno; quien pase en el Draft inicial completa sus 14 jugadores después.</p>
         <p><strong>Mercado abierto:</strong> al terminar el Draft, cualquiera compra y vende en cualquier orden hasta el domingo a las 11:59 pm (hora del centro de México) previo a la fecha de la siguiente Jornada. Desde ese momento y hasta que termina la Jornada, el Mercado está cerrado.</p>
@@ -2886,10 +2956,12 @@
       if (!st) break;
       const dl = st.deadline, who = st.playerId, tag = prefix + st.pick + ":";
       const nx = initialDraftSim(dl + 1).st;
-      rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se acabaron tus 3 minutos en el Draft inicial." });
+      // Si ya compró 1 de 2, al acabarse el tiempo no pierde el turno (solo no recupera el pendiente).
+      const partial = st.picksDone > 0;
+      if (!partial) rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se acabaron tus 3 minutos en el Draft inicial. Lo puedes recuperar eligiendo 2 jugadores en tu siguiente turno." });
       if (nx) {
-        rows.push({ key: tag + "next", at: dl, exclude: [who, nx.playerId], url: "./?m=mercado", title: "⌛ " + playerName(who) + " perdió su turno", body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + "." });
-        rows.push({ key: tag + "next:me", at: dl, target: nx.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: playerName(who) + " no alcanzó a comprar. ¡Es tu turno! Tienes 3 minutos." });
+        rows.push({ key: tag + "next", at: dl, exclude: [who, nx.playerId], url: "./?m=mercado", title: "⌛ " + (partial ? "Se acabó el turno de " + playerName(who) : playerName(who) + " perdió su turno"), body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + "." });
+        rows.push({ key: tag + "next:me", at: dl, target: nx.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: playerName(who) + (partial ? " terminó su turno." : " no alcanzó a comprar.") + " ¡Es tu turno!" + (nx.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente." : "") + " Tienes 3 minutos." });
       } else {
         rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el Draft inicial. Compras y ventas libres." });
       }
@@ -2941,14 +3013,14 @@
   // ---- avisos por acciones ----
   function draftSnapshot() {
     const st = marketStatus();
-    return { phase: st.phase, key: st.key, pick: st.pick, playerId: st.playerId, title: st.title, mode: st.mode };
+    return { phase: st.phase, key: st.key, pick: st.pick, playerId: st.playerId, title: st.title, mode: st.mode, allow: st.allow };
   }
   // Tras un pase: avisa el cambio de turno o que se abrió el Mercado.
   async function notifyDraftAdvance(before, actorId) {
     const after = draftSnapshot();
     const rows = [];
     if (before.phase === "draft" && after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
-      const clock = after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? " Tienes 3 minutos." : "";
+      const clock = after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes 3 minutos." : " Tienes 3 minutos.") : "";
       rows.push(
         { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick, exclude: [notifActor(actorId), after.playerId], url: "./?m=mercado", title: "➡️ " + playerName(actorId) + " pasó", body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." },
         { key: "turn:" + state.season.id + ":" + after.key + ":" + after.pick + ":me", target: after.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(actorId) + ". Comienza tu turno." + clock });
@@ -4114,11 +4186,13 @@
       <span class="draft-turn">Turno de: <strong>${escapeHtml(playerName(st.playerId))}</strong> <span class="muted">(${fcFormatted(fin[st.playerId].balance)} · ${fin[st.playerId].count}/${SQUAD_SIZE})</span></span>
       ${st.nextId ? `<span class="muted">Sigue: ${escapeHtml(playerName(st.nextId))}</span>` : ""}
       ${st.mode === "fast" ? `<span class="draft-clock">⚡ Sin límite de tiempo. Si no vas a comprar, puedes terminar el Fast Track: el Mercado se cierra y el Draft sigue el ${escapeHtml(formatCloseAt(new Date(st.resumeAt)))} con 24 h por turno.</span>` : ""}
+      ${st.mode === "timer" && st.allow === 2 ? `<span class="draft-recover">🔁 Tiene ${st.debt === 1 ? "1 turno pendiente" : st.debt + " turnos pendientes"}: en este turno puede elegir <strong>2 jugadores</strong> (lleva ${st.picksDone} de 2).</span>` : ""}
       ${st.mode === "timer" ? `<span class="draft-timer ${myPlayerIds.includes(st.playerId) ? "mine" : ""}">⏱️ <strong id="draft-left" data-deadline="${st.deadline}">${formatClock(st.deadline - Date.now())}</strong><span class="muted">Si se acaba el tiempo, pierde el turno y sigue el siguiente.</span></span>` : ""}
       ${st.mode === "clock" ? `<span class="draft-clock">⏳ Le quedan <strong id="draft-left">${formatLeft(st.deadline - Date.now())}</strong> (hasta el ${escapeHtml(formatCloseAt(new Date(st.deadline)))}). Si no compra ni pasa, pierde el turno.</span>` : ""}
       ${st.mode === "fast" && (isAdmin || myPlayerIds.includes(st.playerId)) ? `<button class="btn-secondary pass-btn" data-action="end-fast-track">Terminar Fast Track</button>` : ""}
-      ${st.canPass && tradePerms(st.playerId, st).pass ? `<button class="btn-secondary pass-btn" data-action="draft-pass">Pasar turno</button>` : ""}
-      ${!isAdmin && myPlayerIds.includes(st.playerId) ? `<span class="my-turn">👉 ¡Es tu turno! Compra 1 jugador o pasa; también puedes vender.</span>` : ""}
+      ${st.canPass && tradePerms(st.playerId, st).pass ? `<button class="btn-secondary pass-btn" data-action="draft-pass">${st.picksDone ? "Terminar turno" : "Pasar turno"}</button>` : ""}
+      ${!isAdmin && myPlayerIds.includes(st.playerId) ? `<span class="my-turn">👉 ¡Es tu turno! ${st.allow === 2 ? (st.picksDone ? "Te falta 1 jugador para recuperar tu turno pendiente, o termina tu turno" : "Puedes comprar 2 jugadores para recuperar tu turno pendiente, o pasa") : "Compra 1 jugador o pasa"}; también puedes vender.</span>` : ""}
+      ${st.mode === "timer" && st.debts && Object.entries(st.debts).some(([id, d]) => d > 0 && id !== st.playerId) ? `<span class="muted debt-note">Turnos pendientes: ${Object.entries(st.debts).filter(([id, d]) => d > 0 && id !== st.playerId).map(([id, d]) => escapeHtml(playerName(id)) + " (" + d + ")").join(" · ")}</span>` : ""}
       ${st.lost && Object.keys(st.lost).length ? `<span class="pen-note">🚨 Penalización: ${Object.entries(st.lost).map(([id, n]) => `<strong>${escapeHtml(playerName(id))}</strong> pierde ${n === 1 ? "su 1er turno" : "sus " + n + " primeros turnos"}`).join(" · ")} de este Draft (se saltan solos).</span>` : ""}
     </div>`;
   }
@@ -4131,17 +4205,18 @@
     return `
     <div class="modal-overlay">
       <div class="modal-box" data-stop-close>
-        <h3>${mine ? "Pasar tu turno" : "Pasar el turno de " + escapeHtml(playerName(st.playerId))}</h3>
+        <h3>${st.picksDone ? (mine ? "Terminar tu turno" : "Terminar el turno de " + escapeHtml(playerName(st.playerId))) : (mine ? "Pasar tu turno" : "Pasar el turno de " + escapeHtml(playerName(st.playerId)))}</h3>
         <p class="muted" style="margin:-6px 0 8px;">${escapeHtml(st.title)}</p>
         <div class="confirm-rows">
           <div><span class="muted">Turno de</span><strong>${escapeHtml(playerName(st.playerId))}</strong></div>
           <div><span class="muted">Saldo · jugadores</span><strong>${fcFormatted(fin.balance)} · ${fin.count}/${SQUAD_SIZE}</strong></div>
           ${st.nextId ? `<div><span class="muted">Sigue</span><strong>${escapeHtml(playerName(st.nextId))}</strong></div>` : ""}
         </div>
-        <p class="muted">${mine ? "No compras" : "No compra"} jugador en este turno. No se puede deshacer.</p>
+        <p class="muted">${st.picksDone ? (mine ? "Terminas tu turno sin recuperar tu turno pendiente." : "Termina su turno sin recuperar su turno pendiente.")
+          : (mine ? "No compras" : "No compra") + " jugador en este turno." + (st.mode === "timer" ? " Queda como turno pendiente: " + (mine ? "podrás recuperarlo" : "podrá recuperarlo") + " eligiendo 2 jugadores en " + (mine ? "tu" : "su") + " siguiente turno." : "")} No se puede deshacer.</p>
         <div class="modal-close-row" style="gap:10px;">
           <button class="btn-secondary" data-action="close-pass">Cancelar</button>
-          <button class="btn-primary" style="width:auto;" data-action="confirm-pass">Confirmar pase</button>
+          <button class="btn-primary" style="width:auto;" data-action="confirm-pass">${st.picksDone ? "Terminar turno" : "Confirmar pase"}</button>
         </div>
       </div>
     </div>`;
@@ -4328,11 +4403,12 @@
         const next = after.playerId;
         rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + "." });
         if (next !== actor) rows.push({ key: key + ":me", url: "./?m=mercado", target: next, title: "🔄 Comienza tu turno",
-          body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? " Tienes 3 minutos." : "") });
+          body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes 3 minutos." : " Tienes 3 minutos.") : "") });
       } else if (after.phase === "open") {
         rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres." });
       } else {
-        rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title });
+        const more = after.phase === "draft" && after.playerId === teamId && after.pick === before.pick;
+        rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title + (more ? "\n🔁 Recupera un turno pendiente: le falta 1 selección." : "") });
       }
       await queueNotifs(rows);
       await syncDraftSchedule();
