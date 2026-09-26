@@ -2798,7 +2798,9 @@
   let notifyTimer = null;
   function kickNotify() {
     clearTimeout(notifyTimer);
-    notifyTimer = setTimeout(() => { try { sb.functions.invoke("notify", { body: {} }).catch(() => {}); } catch (e) {} }, 400);
+    // loop: el servidor se queda ~55 s mandando también los avisos programados
+    // de ese minuto (p. ej. turnos del Draft que se vencen) en el segundo exacto.
+    notifyTimer = setTimeout(() => { try { sb.functions.invoke("notify", { body: { loop: true } }).catch(() => {}); } catch (e) {} }, 400);
   }
   // rows: [{ key, title, body, target?, exclude? (id o lista de ids), kind?, jornadaId?, image?, url?, at? }]
   async function queueNotifs(rows, opts) {
@@ -2816,7 +2818,7 @@
       ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
     }));
     try { await sb.from("notifications").upsert(payload, { onConflict: "key", ignoreDuplicates: true }); } catch (e) { return; }
-    if (!(opts && opts.sent) && rows.some(r => !r.at || r.at <= Date.now())) kickNotify();
+    if (!(opts && opts.sent) && rows.some(r => !r.at || r.at <= Date.now() + 60 * 1000)) kickNotify();
   }
   // Reemplaza los avisos pendientes cuyo key empieza con `prefix`.
   async function replaceScheduled(prefix, rows) {
