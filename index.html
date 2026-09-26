@@ -2131,10 +2131,10 @@
   // acumula 1 pendiente; en cada turno siguiente con pendientes puede elegir
   // 2 jugadores (en los mismos 3 minutos) y, si completa las 2, recupera uno.
   // Los turnos perdidos por penalización no se recuperan.
-  // En el entorno de pruebas el turno dura 1 minuto para probar rápido.
-  const INITIAL_TURN_MS = IS_TEST_ENV ? 60 * 1000 : 3 * 60 * 1000;
-  const INITIAL_TURN_TXT = IS_TEST_ENV ? "1 minuto" : "3 minutos";
-  const INITIAL_TURN_SHORT = IS_TEST_ENV ? "1 min" : "3 min";
+  // En producción cada turno dura 3:05 min; en el entorno de pruebas, 1 minuto para probar rápido.
+  const INITIAL_TURN_MS = IS_TEST_ENV ? 60 * 1000 : (3 * 60 + 5) * 1000;
+  const INITIAL_TURN_TXT = IS_TEST_ENV ? "1 minuto" : "3:05 minutos";
+  const INITIAL_TURN_SHORT = IS_TEST_ENV ? "1 min" : "3:05 min";
   function initialDraftSim(now) {
     now = now || Date.now();
     const row = draftRow("initial");
