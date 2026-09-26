@@ -1386,7 +1386,9 @@
     const left = +el.dataset.deadline - Date.now();
     el.textContent = formatClock(left);
     el.classList.toggle("low", left < Math.min(30000, INITIAL_TURN_MS / 4));
-    if (left <= 0 && !el.dataset.done) { el.dataset.done = "1"; setTimeout(() => { if (state && !loading) render(); }, 600); }
+    // Al llegar a 0:00 se redibuja (pasa el turno) y se pide al servidor que
+    // mande ya los avisos de turno perdido, sin esperar su revisión de cada minuto.
+    if (left <= 0 && !el.dataset.done) { el.dataset.done = "1"; kickNotify(); setTimeout(() => { if (state && !loading) render(); }, 600); }
   }, 1000);
   let hiddenAt = 0;
   document.addEventListener("visibilitychange", () => {
