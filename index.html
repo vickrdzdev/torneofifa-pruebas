@@ -2125,10 +2125,10 @@
   // acumula 1 pendiente; en cada turno siguiente con pendientes puede elegir
   // 2 jugadores (en los mismos 3 minutos) y, si completa las 2, recupera uno.
   // Los turnos perdidos por penalización no se recuperan.
-  // En el entorno de pruebas el turno dura 20 s para probar rápido.
-  const INITIAL_TURN_MS = IS_TEST_ENV ? 20 * 1000 : 3 * 60 * 1000;
-  const INITIAL_TURN_TXT = IS_TEST_ENV ? "20 segundos" : "3 minutos";
-  const INITIAL_TURN_SHORT = IS_TEST_ENV ? "20 s" : "3 min";
+  // En el entorno de pruebas el turno dura 1 minuto para probar rápido.
+  const INITIAL_TURN_MS = IS_TEST_ENV ? 60 * 1000 : 3 * 60 * 1000;
+  const INITIAL_TURN_TXT = IS_TEST_ENV ? "1 minuto" : "3 minutos";
+  const INITIAL_TURN_SHORT = IS_TEST_ENV ? "1 min" : "3 min";
   function initialDraftSim(now) {
     now = now || Date.now();
     const row = draftRow("initial");
@@ -2231,7 +2231,7 @@
           <div><span class="muted">Tiempo por turno</span><strong>${INITIAL_TURN_TXT}</strong></div>
           <div><span class="muted">Selecciones</span><strong>${order.length * SQUAD_SIZE}</strong></div>
         </div>
-        <p class="muted">El reloj arranca en cuanto confirmes y se avisa a todos. Si alguien no compra ni pasa en sus ${INITIAL_TURN_TXT}, pierde ese turno. No se puede deshacer.</p>
+        <p class="muted">El reloj arranca en cuanto confirmes y se avisa a todos. Si alguien no compra ni pasa a tiempo, pierde ese turno. No se puede deshacer.</p>
         <div class="modal-close-row" style="gap:10px;">
           <button class="btn-secondary" data-action="close-start-initial">Cancelar</button>
           <button class="btn-primary" style="width:auto;" data-action="confirm-start-initial">Iniciar Draft</button>
@@ -2599,7 +2599,7 @@
         <h4>Equipos, Mercado y Draft</h4>
         <p>Cada player arma un equipo de <strong>${SQUAD_SIZE} jugadores</strong> (11 titulares + 3 de banca) comprándolos en el Mercado con sus FIFA Coins. Saldo = ${fcFormatted(INITIAL_BUDGET)} iniciales + FC ganadas en las Jornadas − compras.</p>
         <p>Valor de un jugador = RAT + bono de pierna débil (WF 3★ +1, 4★ +2, 5★ +4) + bono de skills (SM 3★ +1, 4★ +2, 5★ +5).</p>
-        <p><strong>Draft inicial:</strong> al terminar la J0, un admin lo inicia. Cada turno tiene <strong>${INITIAL_TURN_TXT}</strong> contados desde la compra o pase anterior; si se agotan, el turno se pierde y sigue el siguiente. Quien pase o se quede sin tiempo sin comprar acumula un <strong>turno pendiente</strong>: en su siguiente turno puede elegir 2 jugadores dentro de los mismos ${INITIAL_TURN_TXT} para recuperarlo; si tiene varios pendientes, recupera uno por turno. Los turnos perdidos por penalización no se recuperan. Se compra uno a uno en formato snake: la primera ronda va del último al primer lugar de la Tabla General, la segunda del primero al último, y así sucesivamente. Un jugador comprado ya no está disponible.</p>
+        <p><strong>Draft inicial:</strong> al terminar la J0, un admin lo inicia. Cada turno tiene <strong>${INITIAL_TURN_TXT}</strong> contados desde la compra o pase anterior; si se agotan, el turno se pierde y sigue el siguiente. Quien pase o se quede sin tiempo sin comprar acumula un <strong>turno pendiente</strong>: en su siguiente turno puede elegir 2 jugadores dentro del tiempo de ese mismo turno para recuperarlo; si tiene varios pendientes, recupera uno por turno. Los turnos perdidos por penalización no se recuperan. Se compra uno a uno en formato snake: la primera ronda va del último al primer lugar de la Tabla General, la segunda del primero al último, y así sucesivamente. Un jugador comprado ya no está disponible.</p>
         <p><strong>Fast Track y reloj del Draft de la Jornada:</strong> en cuanto termina la Jornada empieza el <strong>Fast Track</strong>: el Draft corre sin límite de tiempo. Si quien está en turno no va a comprar, él o el admin terminan el Fast Track; el Mercado se cierra y el Draft sigue el lunes 00:00 (hora del centro de México) posterior a la fecha de la Jornada, en ese mismo turno. Desde el lunes, cada turno tiene <strong>24 horas</strong> contadas desde la compra o pase anterior; si se agotan, el turno se pierde. Al completar los 2 turnos de todos se abre el Mercado; los turnos que falten al cierre del Mercado (domingo 11:59 pm) se pierden. El Draft inicial no tiene Fast Track.</p>
         <p><strong>Draft de la Jornada:</strong> al terminar cada Jornada de la J1 a la J10 hay un Draft de una sola vuelta snake (del último al primero y del primero al último de la Tabla General): cada quien tiene 2 turnos. En cualquier Draft (inicial o de Jornada) se puede pasar el turno; quien pase en el Draft inicial completa sus 14 jugadores después.</p>
         <p><strong>Mercado abierto:</strong> al terminar el Draft, cualquiera compra y vende en cualquier orden hasta el domingo a las 11:59 pm (hora del centro de México) previo a la fecha de la siguiente Jornada. Desde ese momento y hasta que termina la Jornada, el Mercado está cerrado.</p>
@@ -2965,7 +2965,7 @@
       const nx = initialDraftSim(dl + 1).st;
       // Si ya compró 1 de 2, al acabarse el tiempo no pierde el turno (solo no recupera el pendiente).
       const partial = st.picksDone > 0;
-      if (!partial) rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se acabaron tus " + INITIAL_TURN_TXT + " en el Draft inicial. Lo puedes recuperar eligiendo 2 jugadores en tu siguiente turno." });
+      if (!partial) rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se acabó tu tiempo (" + INITIAL_TURN_TXT + ") en el Draft inicial. Lo puedes recuperar eligiendo 2 jugadores en tu siguiente turno." });
       if (nx) {
         rows.push({ key: tag + "next", at: dl, exclude: [who, nx.playerId], url: "./?m=mercado", title: "⌛ " + (partial ? "Se acabó el turno de " + playerName(who) : playerName(who) + " perdió su turno"), body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + "." });
         rows.push({ key: tag + "next:me", at: dl, target: nx.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: playerName(who) + (partial ? " terminó su turno." : " no alcanzó a comprar.") + " ¡Es tu turno!" + (nx.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente." : "") + " Tienes " + INITIAL_TURN_TXT + "." });
