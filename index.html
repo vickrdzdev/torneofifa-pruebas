@@ -513,6 +513,11 @@
   .market-section { margin-top: -4px; }
   .market-scroll { max-height: calc(100vh - 90px); min-height: 420px; overflow: auto; }
   table.market-table thead th { position: sticky; top: 0; z-index: 2; }
+  table.market-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  table.market-table th.sortable:hover { color: var(--text); }
+  table.market-table th.sorted { color: var(--accent); }
+  table.market-table .sort-ind { margin-left: 4px; font-size: .85em; opacity: .45; }
+  table.market-table th.sorted .sort-ind { opacity: 1; }
   table.market-table td.name-cell { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 150px; white-space: normal; }
   table.market-table thead th:nth-child(2) { position: sticky; left: 0; z-index: 3; }
   table.market-table td.photo-cell { padding: 3px 4px 3px 10px; }
@@ -680,6 +685,7 @@
   let marketPos = "";
   let marketOnlyAvailable = false;
   let marketPage = 0;
+  let marketSort = null;      // { key, dir: 1 | -1 } — columna por la que se ordena el Mercado
   let txPlayer = "";          // filtro de Transacciones por persona
   let txKind = "";            // filtro por tipo
   let buyCardId = null;       // modal de compra abierto
@@ -3922,10 +3928,52 @@
     const q = normalizeText(marketQuery.trim());
     const sold = soldMap();
     const cap = ratCap();
-    return market.filter(m =>
+    const list = market.filter(m =>
       (!q || m.search.includes(q)) &&
       (!marketPos || m.pos === marketPos) &&
       (!marketOnlyAvailable || (!sold[m.id] && m.rat <= cap)));
+    if (!marketSort) return list;
+    const col = MARKET_COLS.find(c => c.key === marketSort.key);
+    const val = m => col.get(m, sold, cap);
+    const empty = v => v === null || v === undefined || v === "" || (typeof v === "number" && isNaN(v));
+    // Los vacíos siempre al final; en empate se respeta el orden original.
+    return list.map((m, i) => ({ m, i, v: val(m) })).sort((a, b) => {
+      if (empty(a.v) || empty(b.v)) return (empty(a.v) - empty(b.v)) || a.i - b.i;
+      const c = typeof a.v === "string" ? a.v.localeCompare(b.v, "es") : a.v - b.v;
+      return c * marketSort.dir || a.i - b.i;
+    }).map(x => x.m);
+  }
+  // Columnas de la tabla del Mercado; las que tienen `get` se pueden ordenar (clic en el encabezado).
+  // `num` = empieza de mayor a menor.
+  const MARKET_COLS = [
+    { label: "" },
+    { key: "name", label: "Nombre", left: true, get: m => m.name },
+    { key: "price", label: "Valor", num: true, get: m => m.price },
+    { key: "status", label: "Estado", get: (m, sold, cap) => sold[m.id] ? 2 : m.rat > cap ? 1 : 0 },
+    { key: "rat", label: "RAT", num: true, get: m => m.rat },
+    { key: "pos", label: "POS", get: m => m.pos },
+    { key: "altPos", label: "ALT POS", get: m => m.altPos },
+    { key: "futbinRat", label: "FUTBIN RAT", num: true, get: m => m.futbinRat },
+    { key: "futbinPos", label: "FUTBIN POS", get: m => m.futbinPos },
+    { key: "foot", label: "FOOT", get: m => m.foot },
+    { key: "sm", label: "SM", num: true, get: m => m.sm },
+    { key: "wf", label: "WF", num: true, get: m => m.wf },
+    { key: "pac", label: "PAC", num: true, get: m => m.pac },
+    { key: "sho", label: "SHO", num: true, get: m => m.sho },
+    { key: "pas", label: "PAS", num: true, get: m => m.pas },
+    { key: "dri", label: "DRI", num: true, get: m => m.dri },
+    { key: "def", label: "DEF", num: true, get: m => m.def },
+    { key: "phy", label: "PHY", num: true, get: m => m.phy },
+    { key: "body", label: "BODY", num: true, get: m => parseInt(m.body, 10) },
+    { key: "accelerate", label: "ACCELERATE", get: m => m.accelerate },
+    { label: "Carta" }
+  ];
+  function setMarketSort(key) {
+    const col = MARKET_COLS.find(c => c.key === key);
+    if (!col) return;
+    marketSort = marketSort && marketSort.key === key ? { key, dir: -marketSort.dir } : { key, dir: col.num ? -1 : 1 };
+    marketPage = 0;
+    refreshMarketResults();
   }
   function draftBannerHtml() {
     const st = marketStatus();
@@ -4020,12 +4068,11 @@
     return `${pager}
       <div class="table-scroll market-scroll">
         <table class="standings compact market-table">
-          <thead><tr>
-            <th></th><th style="text-align:left">Nombre</th><th>Valor</th><th>Estado</th>
-            <th>RAT</th><th>POS</th><th>ALT POS</th><th>FUTBIN RAT</th><th>FUTBIN POS</th><th>FOOT</th>
-            <th>SM</th><th>WF</th><th>PAC</th><th>SHO</th><th>PAS</th><th>DRI</th><th>DEF</th><th>PHY</th>
-            <th>BODY</th><th>ACCELERATE</th><th>Carta</th>
-          </tr></thead>
+          <thead><tr>${MARKET_COLS.map(c => {
+            if (!c.get) return `<th>${c.label}</th>`;
+            const on = marketSort && marketSort.key === c.key;
+            return `<th class="sortable ${on ? "sorted" : ""}" ${c.left ? 'style="text-align:left"' : ""} data-action="market-sort" data-key="${c.key}" title="Ordenar por ${c.label}" aria-sort="${on ? (marketSort.dir > 0 ? "ascending" : "descending") : "none"}">${c.label}<span class="sort-ind">${on ? (marketSort.dir > 0 ? "▲" : "▼") : "↕"}</span></th>`;
+          }).join("")}</tr></thead>
           <tbody>${slice.map(m => {
             const pu = sold[m.id];
             const locked = !pu && m.rat > cap;
@@ -4328,6 +4375,7 @@
       case "set-module": if (el.dataset.module === "equipos" && activeModule !== "equipos") teamsTab = null; activeModule = el.dataset.module; navOpen = false; render(); window.scrollTo(0, 0); break;
       case "open-nav": navOpen = true; render(); break;
       case "close-nav": navOpen = false; render(); break;
+      case "market-sort": setMarketSort(el.dataset.key); break;
       case "set-team-tab": teamsTab = el.dataset.team; render(); break;
       case "market-page": marketPage += parseInt(el.dataset.dir, 10); refreshMarketResults(); break;
       case "market-page-to": marketPage = el.dataset.page === "first" ? 0 : Number.MAX_SAFE_INTEGER; refreshMarketResults(); break;
