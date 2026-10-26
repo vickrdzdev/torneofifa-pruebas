@@ -2684,10 +2684,13 @@
     { id: "alineaciones", icon: "📋", label: "Alineaciones" },
     { id: "estadisticas", icon: "📊", label: "Estadísticas" },
     { id: "penalizaciones", icon: "🚨", label: "Penalizaciones" },
-    { id: "premios", icon: "💰", label: "Premios" }
+    { id: "premios", icon: "💰", label: "Premios" },
+    { id: "notificaciones", icon: "🔔", label: "Notificaciones", admin: true }
   ];
+  // Módulos que ve la sesión (los marcados admin solo los ven los admins).
+  function visibleModules() { return MODULES.filter(m => !m.admin || isAdmin); }
   function renderDashboard() {
-    if (!MODULES.some(m => m.id === activeModule)) activeModule = "torneo";
+    if (!visibleModules().some(m => m.id === activeModule)) activeModule = "torneo";
     const app = $("#app");
     let topTabs = "", body = "", wide = false;
     if (activeModule === "equipos") {
@@ -2704,6 +2707,8 @@
       ({ tabs: topTabs, body } = renderStatsModule());
     } else if (activeModule === "alineaciones") {
       ({ tabs: topTabs, body } = renderLineupsModule());
+    } else if (activeModule === "notificaciones") {
+      body = pushStatusHtml();
     } else {
       ({ tabs: topTabs, body } = renderTournamentModule());
     }
@@ -2713,7 +2718,7 @@
         <aside class="sidenav ${navOpen ? "open" : ""}">
           <div class="sidenav-brand"><span class="dot live"></span>${escapeHtml(state.season.name)}</div>
           <nav>
-            ${MODULES.map(m => `<button class="nav-item ${activeModule === m.id ? "active" : ""}" data-action="set-module" data-module="${m.id}"><span class="nav-ic">${m.icon}</span>${m.label}</button>`).join("")}
+            ${visibleModules().map(m => `<button class="nav-item ${activeModule === m.id ? "active" : ""}" data-action="set-module" data-module="${m.id}"><span class="nav-ic">${m.icon}</span>${m.label}</button>`).join("")}
           </nav>
         </aside>
         ${navOpen ? `<div class="nav-backdrop" data-action="close-nav"></div>` : ""}
@@ -4040,7 +4045,7 @@
     if (old) { try { await sb.storage.from("logos").remove([old]); } catch (e) {} }
     await loadSeasonData(); render();
   }
-  // Solo admins: quién tiene notificaciones activas y desde cuándo.
+  // Módulo Notificaciones (solo admins): quién tiene notificaciones activas y desde cuándo.
   function pushStatusHtml() {
     const subs = state.pushSubs || [];
     const rows = state.players.map(p => {
@@ -4051,8 +4056,8 @@
     });
     const off = rows.filter(r => !r.n);
     return `
-      <div class="section">
-        <div class="section-head"><h2>🔔 Notificaciones</h2><span class="sub">${off.length ? off.length + (off.length === 1 ? " player no las recibe" : " players no las reciben") : "Todos las reciben"}</span></div>
+      <div class="section" style="margin-top:0;">
+        <div class="section-head"><h2>Quién recibe notificaciones</h2><span class="sub">${off.length ? off.length + (off.length === 1 ? " player no las recibe" : " players no las reciben") : "Todos las reciben"}</span></div>
         <div class="table-scroll">
           <table class="standings compact push-status">
             <thead><tr><th style="text-align:left">Player</th><th>Celulares</th><th style="text-align:left">Estado</th></tr></thead>
@@ -4119,8 +4124,7 @@
             </tbody>
           </table>
         </div>` : `<div class="card empty-note" style="margin-top:16px;">Todavía no ha comprado jugadores.</div>`}
-      </div>
-      ${isAdmin ? pushStatusHtml() : ""}`;
+      </div>`;
     return { tabs, body };
   }
 
