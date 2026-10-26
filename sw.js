@@ -3,7 +3,7 @@
 // solo si no hay conexión usa la última copia guardada de la página.
 // No toca las llamadas a Supabase ni a otros dominios (los datos del torneo
 // siempre requieren conexión).
-const CACHE = "torneofifa-v3";
+const CACHE = "torneofifa-v4";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -59,5 +59,31 @@ self.addEventListener("notificationclick", (e) => {
       if (w.url.startsWith(self.registration.scope) && "focus" in w) { await w.navigate(url).catch(() => {}); return w.focus(); }
     }
     return self.clients.openWindow(url);
+  })());
+});
+
+// Si el navegador renueva el registro de notificaciones por su cuenta (pasa
+// cada cierto tiempo, sobre todo si el celular lleva mucho sin usar la app),
+// se pide uno nuevo y se avisa al servidor, sin que la persona abra la app.
+const IS_PROD = ["torneofifa.com", "www.torneofifa.com"].includes(self.location.hostname);
+const SB_URL = IS_PROD ? "https://zohacxiwuapnziicaarj.supabase.co" : "https://bcvzgwnwjtcmtbhwruhi.supabase.co";
+const VAPID = IS_PROD
+  ? "BJuDm4Fub96yd9DA7ScIlhyr3DtuPPGcps5nuH0F3TjtXrvWrkWDrgky5W_NSeG71n_PYKd-T0TO91Q2b_w8Rck"
+  : "BIPAuwSogSlMMzavPGUQQVCpT9HeGQgN1mxzuYjIw5JQun4phuycjoz6cRlKdvnoWhcnEsbgKQgIf1uZtC7qdbs";
+function vapidBytes(b64) {
+  const pad = "=".repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+self.addEventListener("pushsubscriptionchange", (e) => {
+  e.waitUntil((async () => {
+    const old = e.oldSubscription;
+    if (!old || !old.endpoint) return; // sin el registro anterior, se repara al abrir la app
+    const sub = e.newSubscription ||
+      await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidBytes(VAPID) });
+    await fetch(SB_URL + "/functions/v1/push-renew", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oldEndpoint: old.endpoint, sub: sub.toJSON() })
+    }).catch(() => {});
   })());
 });

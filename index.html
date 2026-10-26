@@ -543,6 +543,10 @@
   .team-opt.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
   .team-opt.full { opacity: .5; cursor: not-allowed; }
   .confirm-rows { display: grid; gap: 6px; margin: 12px 0; }
+  .push-banner { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-size: 14px; }
+  .push-banner > span { flex: 1; min-width: 0; }
+  .push-banner .push-banner-btn { width: auto; padding: 7px 14px; font-size: 14px; flex-shrink: 0; }
+  .push-banner-x { background: none; border: 0; color: var(--text-muted); font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0; }
   .confirm-rows > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 15px; }
   .confirm-rows strong { font-variant-numeric: tabular-nums; text-align: right; }
   .confirm-rows .muted { white-space: nowrap; }
@@ -1061,8 +1065,17 @@
       penalties = res.data || [];
     } catch (e) { penalties = []; }
 
+    // Quién tiene notificaciones activas (solo lo puede leer un admin).
+    let pushSubs = [];
+    if (isAdmin) {
+      try {
+        const res = await sb.from("push_subscriptions").select("email, created_at");
+        pushSubs = res.data || [];
+      } catch (e) { pushSubs = []; }
+    }
+
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties, draftStates };
+    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties, draftStates, pushSubs };
     ensureDraftStarted();
   }
 
@@ -2715,7 +2728,7 @@
             </div>
             ${topTabs ? `<div class="tabs">${topTabs}</div>` : ""}
           </div>
-          <div class="wrap ${wide ? "wide" : ""}" style="padding-top:20px;">${body}</div>
+          <div class="wrap ${wide ? "wide" : ""}" style="padding-top:20px;">${pushBannerHtml()}${body}</div>
         </div>
       </div>
       ${helpModalHtml()}
@@ -2759,12 +2772,41 @@
     });
     return !error;
   }
+  // Preferencias de este celular: si la persona apagó la campana a propósito
+  // no se reactiva sola; el último registro guardado sirve para detectar que
+  // el servidor lo dio de baja (Google o Apple lo invalidaron).
+  const PUSH_OFF_KEY = "tf_push_off", PUSH_SAVED_KEY = "tf_push_endpoint";
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+  function newPushSub(reg) {
+    return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
+  }
+  // Al abrir la app: si el permiso sigue dado, se asegura de que este celular
+  // tenga un registro válido. Si no tiene, o si el servidor lo dio de baja,
+  // pide uno nuevo sin preguntar nada.
   async function refreshPushState() {
-    const sub = await currentPushSub();
     const before = pushOn;
-    pushOn = !!sub && Notification.permission === "granted";
-    if (pushOn && hasSession) await savePushSub(sub);
-    if (before !== pushOn) render();
+    let sub = await currentPushSub();
+    const granted = pushSupported() && Notification.permission === "granted";
+    if (granted && hasSession && lsGet(PUSH_OFF_KEY) !== "1") {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (sub) {
+          const { data } = await sb.from("push_subscriptions").select("id").eq("endpoint", sub.endpoint);
+          if ((!data || !data.length) && lsGet(PUSH_SAVED_KEY) === sub.endpoint) {
+            try { await sub.unsubscribe(); } catch (e) {}
+            sub = await newPushSub(reg);
+          }
+        } else {
+          sub = await newPushSub(reg);
+        }
+        if (sub && await savePushSub(sub)) lsSet(PUSH_SAVED_KEY, sub.endpoint);
+      } catch (e) { /* se reintenta la próxima vez que se abra la app */ }
+    }
+    pushOn = !!sub && granted;
+    const first = !pushChecked;
+    pushChecked = true;
+    if (before !== pushOn || first) render();
   }
   async function togglePush() {
     if (!pushSupported()) {
@@ -2778,22 +2820,42 @@
         await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
         try { await sub.unsubscribe(); } catch (e) {}
       }
+      lsSet(PUSH_OFF_KEY, "1"); lsSet(PUSH_SAVED_KEY, null);
       pushOn = false; render();
       showToast("Notificaciones desactivadas.");
       return;
     }
     const perm = await Notification.requestPermission();
-    if (perm !== "granted") { showToast("No diste permiso. Actívalo en los ajustes del navegador para recibir avisos."); return; }
+    if (perm !== "granted") { showToast("No diste permiso. Actívalo en los ajustes del navegador para recibir avisos."); render(); return; }
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = (await reg.pushManager.getSubscription()) ||
         await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
       if (!(await savePushSub(sub))) throw new Error();
+      lsSet(PUSH_OFF_KEY, null); lsSet(PUSH_SAVED_KEY, sub.endpoint);
       pushOn = true; render();
       showToast("🔔 Notificaciones activadas en este dispositivo.");
     } catch (e) {
       showToast("No se pudieron activar las notificaciones.");
     }
+  }
+  // Letrero para quien no está recibiendo notificaciones en este celular.
+  let pushBannerHidden = false;
+  let pushChecked = false; // el letrero espera a revisar el estado real del celular
+  function pushBannerHtml() {
+    // Quien apagó la campana a propósito no ve el letrero (la puede volver a prender con 🔕).
+    if (!hasSession || !pushChecked || pushOn || pushBannerHidden || lsGet(PUSH_OFF_KEY) === "1") return "";
+    const close = `<button class="push-banner-x" data-action="hide-push-banner" title="Ocultar" aria-label="Ocultar">✕</button>`;
+    if (!pushSupported()) {
+      const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const standalone = window.navigator.standalone || window.matchMedia("(display-mode: standalone)").matches;
+      if (!ios || standalone) return "";
+      return `<div class="push-banner"><span>📲 Para recibir notificaciones en iPhone, instala la app: en Safari toca <strong>Compartir → Agregar a pantalla de inicio</strong> y ábrela desde ese ícono.</span>${close}</div>`;
+    }
+    if (Notification.permission === "denied") {
+      return `<div class="push-banner"><span>🔕 Tienes bloqueadas las notificaciones de Torneo FIFA. Permítelas en los ajustes del navegador o del celular para este sitio y vuelve a abrir la app.</span>${close}</div>`;
+    }
+    return `<div class="push-banner"><span>🔔 Activa las notificaciones para enterarte al instante de compras, turnos del Draft y recordatorios.</span><button class="btn-primary push-banner-btn" data-action="toggle-push">Activar</button>${close}</div>`;
   }
   async function dropPushOnLogout() {
     const sub = await currentPushSub();
@@ -3978,6 +4040,34 @@
     if (old) { try { await sb.storage.from("logos").remove([old]); } catch (e) {} }
     await loadSeasonData(); render();
   }
+  // Solo admins: quién tiene notificaciones activas y desde cuándo.
+  function pushStatusHtml() {
+    const subs = state.pushSubs || [];
+    const rows = state.players.map(p => {
+      const emails = playerAccounts.filter(a => a.player_id === p.id).map(a => String(a.email || "").toLowerCase());
+      const mine = subs.filter(s => emails.includes(String(s.email || "").toLowerCase()));
+      const last = mine.map(s => s.created_at).sort().pop();
+      return { p, n: mine.length, last, linked: emails.length > 0 };
+    });
+    const off = rows.filter(r => !r.n);
+    return `
+      <div class="section">
+        <div class="section-head"><h2>🔔 Notificaciones</h2><span class="sub">${off.length ? off.length + (off.length === 1 ? " player no las recibe" : " players no las reciben") : "Todos las reciben"}</span></div>
+        <div class="table-scroll">
+          <table class="standings compact push-status">
+            <thead><tr><th style="text-align:left">Player</th><th>Celulares</th><th style="text-align:left">Estado</th></tr></thead>
+            <tbody>${rows.map(r => `<tr>
+              <td class="name-cell">${escapeHtml(r.p.name)}</td>
+              <td>${r.n}</td>
+              <td style="text-align:left">${r.n ? `<span class="pen-ok">✅ Activas</span> <span class="muted">· desde el ${escapeHtml(new Date(r.last).toLocaleDateString("es-MX", { timeZone: "America/Mexico_City", day: "numeric", month: "short" }))}</span>`
+                : r.linked ? `<span class="pen-neg">❌ No las recibe</span>`
+                : `<span class="muted">Sin cuenta ligada</span>`}</td>
+            </tr>`).join("")}</tbody>
+          </table>
+        </div>
+        ${off.length ? `<p class="qual-note">Quien no las recibe debe entrar a la app y tocar la campana 🔔. Si el registro de un celular deja de servir, la app lo renueva sola.</p>` : ""}
+      </div>`;
+  }
   function renderTeamsModule() {
     loadMarket(); // para las fotos de los jugadores
     // Por default se abre el equipo propio (si la sesión está ligada a un player).
@@ -4029,7 +4119,8 @@
             </tbody>
           </table>
         </div>` : `<div class="card empty-note" style="margin-top:16px;">Todavía no ha comprado jugadores.</div>`}
-      </div>`;
+      </div>
+      ${isAdmin ? pushStatusHtml() : ""}`;
     return { tabs, body };
   }
 
@@ -4617,6 +4708,7 @@
       case "close-end-ft": endFtOpen = false; render(); break;
       case "confirm-end-ft": confirmEndFastTrack(); break;
       case "toggle-push": togglePush(); break;
+      case "hide-push-banner": pushBannerHidden = true; render(); break;
       case "open-help": helpOpen = true; render(); break;
       case "close-help": helpOpen = false; render(); break;
       case "new-season": newSeasonFlow(); break;
