@@ -1,10 +1,13 @@
 // Service worker de Torneo FIFA: necesario para instalar la app en el celular.
-// Siempre intenta primero la red (así cada publicación se ve al instante) y
-// solo si no hay conexión usa la última copia guardada de la página.
-// No toca las llamadas a Supabase ni a otros dominios (los datos del torneo
-// siempre requieren conexión).
-const CACHE = "torneofifa-v4";
+// · La página y el resto de la app: siempre primero de internet (así cada
+//   publicación se ve al instante); solo sin conexión usa la última copia.
+// · Lo que nunca cambia (librería con versión fija, catálogo de jugadores con
+//   número de versión, tipografías): se guarda en el celular y se lee de ahí.
+// No toca las llamadas a Supabase (los datos del torneo siempre se piden en vivo).
+const CACHE = "torneofifa-v5";
+const STATIC = "torneofifa-static-v1";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
+const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -13,14 +16,39 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== STATIC).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
+// Archivos que nunca cambian para una misma dirección: la librería con versión
+// fija, el catálogo pedido con ?v= y las tipografías.
+function isStatic(url) {
+  if (FONT_HOSTS.includes(url.hostname)) return true;
+  if (url.origin !== self.location.origin) return false;
+  return url.pathname.includes("/vendor/") || (url.pathname.endsWith("/market.json") && url.searchParams.has("v"));
+}
+async function fromStatic(req, url) {
+  const cache = await caches.open(STATIC);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res.ok || res.type === "opaque") {
+    // De market.json solo se guarda la versión actual.
+    if (url.pathname.endsWith("/market.json")) {
+      for (const k of await cache.keys()) if (new URL(k.url).pathname.endsWith("/market.json")) await cache.delete(k);
+    }
+    await cache.put(req, res.clone());
+  }
+  return res;
+}
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (isStatic(url)) { e.respondWith(fromStatic(req, url)); return; }
+  if (url.origin !== self.location.origin) return;
   e.respondWith(
     fetch(req)
       .then((res) => {

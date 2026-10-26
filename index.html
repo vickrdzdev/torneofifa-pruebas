@@ -15,7 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Librería de Supabase servida desde la propia app (versión fija; el service worker la guarda en el celular). -->
+<script src="vendor/supabase-js-2.118.0.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -971,19 +972,40 @@
     if (!seasons || !seasons.length) { state = null; return; }
     const season = seasons[0];
 
-    const { data: players } = await sb.from("players").select("*").eq("season_id", season.id).order("sort_order");
-    const { data: jornadasRows } = await sb.from("jornadas").select("*").eq("season_id", season.id).order("jornada_number");
-    const jornadaIds = (jornadasRows || []).map(j => j.id);
+    // Las consultas se piden en paralelo (con datos móviles, una tras otra
+    // tardaban varios segundos). Si una falla, el resto sigue.
+    const rows = q => Promise.resolve(q).then(r => (r && r.data) || [], () => []);
+    const sid = season.id;
+    const [players, jornadasRows, purchases, passes, lineups, draftStates, penalties, pushSubs] = await Promise.all([
+      rows(sb.from("players").select("*").eq("season_id", sid).order("sort_order")),
+      rows(sb.from("jornadas").select("*").eq("season_id", sid).order("jornada_number")),
+      rows(sb.from("team_purchases").select("*").eq("season_id", sid).order("created_at")),
+      rows(sb.from("draft_passes").select("*").eq("season_id", sid).order("created_at")),
+      rows(sb.from("lineups").select("*").eq("season_id", sid)),
+      rows(sb.from("draft_states").select("*").eq("season_id", sid)),
+      rows(sb.from("penalties").select("*").eq("season_id", sid).order("created_at")),
+      // Quién tiene notificaciones activas (solo lo puede leer un admin).
+      isAdmin ? rows(sb.from("push_subscriptions").select("email, created_at")) : Promise.resolve([])
+    ]);
+    const jornadaIds = jornadasRows.map(j => j.id);
 
-    let attendance = [], matches = [];
-    if (jornadaIds.length) {
-      const [attRes, matRes] = await Promise.all([
-        sb.from("jornada_attendance").select("*").in("jornada_id", jornadaIds),
-        sb.from("matches").select("*").in("jornada_id", jornadaIds)
-      ]);
-      attendance = attRes.data || [];
-      matches = matRes.data || [];
-    }
+    // Segunda tanda, también en paralelo: lo que depende de lo anterior.
+    // Escudos e imágenes de alineaciones son privados: enlaces temporales de 12 h.
+    const logoPaths = players.map(p => p.logo_path).filter(Boolean);
+    const paths = [];
+    lineups.forEach(l => { if (l.starters_path) paths.push(l.starters_path); if (l.bench_path) paths.push(l.bench_path); });
+    const signed = (bucket, list) => list.length
+      ? Promise.resolve(sb.storage.from(bucket).createSignedUrls(list, 60 * 60 * 12)).then(r => (r && r.data) || [], () => [])
+      : Promise.resolve([]);
+    const [attendance, matches, logoSigned, lineupSigned] = await Promise.all([
+      jornadaIds.length ? rows(sb.from("jornada_attendance").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([]),
+      jornadaIds.length ? rows(sb.from("matches").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([]),
+      signed("logos", logoPaths),
+      signed("lineups", paths)
+    ]);
+    const logoUrls = {}, lineupUrls = {};
+    logoSigned.forEach(x => { if (x && x.signedUrl) logoUrls[x.path] = x.signedUrl; });
+    lineupSigned.forEach(x => { if (x && x.signedUrl) lineupUrls[x.path] = x.signedUrl; });
 
     const jornadas = (jornadasRows || []).map(jr => {
       const activeIds = attendance.filter(a => a.jornada_id === jr.id).map(a => a.player_id);
@@ -1013,66 +1035,6 @@
       if (playoff) Object.assign(playoff, playoffSeeding(jornada));
       return jornada;
     });
-
-    // Si las compras no cargan, el Torneo sigue funcionando.
-    let purchases = [];
-    try {
-      const res = await sb.from("team_purchases").select("*").eq("season_id", season.id).order("created_at");
-      purchases = res.data || [];
-    } catch (e) { purchases = []; }
-
-    let passes = [];
-    try {
-      const res = await sb.from("draft_passes").select("*").eq("season_id", season.id).order("created_at");
-      passes = res.data || [];
-    } catch (e) { passes = []; }
-
-    // Escudos de los equipos (privados): enlaces temporales de 12 h.
-    const logoUrls = {};
-    const logoPaths = (players || []).map(p => p.logo_path).filter(Boolean);
-    if (logoPaths.length) {
-      try {
-        const { data } = await sb.storage.from("logos").createSignedUrls(logoPaths, 60 * 60 * 12);
-        (data || []).forEach(x => { if (x && x.signedUrl) logoUrls[x.path] = x.signedUrl; });
-      } catch (e) { /* sin escudos, el resto sigue */ }
-    }
-
-    let lineups = [];
-    try {
-      const res = await sb.from("lineups").select("*").eq("season_id", season.id);
-      lineups = res.data || [];
-    } catch (e) { lineups = []; }
-    // Las imágenes son privadas: se piden enlaces temporales (12 h) con la sesión.
-    const lineupUrls = {};
-    const paths = [];
-    lineups.forEach(l => { if (l.starters_path) paths.push(l.starters_path); if (l.bench_path) paths.push(l.bench_path); });
-    if (paths.length) {
-      try {
-        const { data } = await sb.storage.from("lineups").createSignedUrls(paths, 60 * 60 * 12);
-        (data || []).forEach(x => { if (x && x.signedUrl) lineupUrls[x.path] = x.signedUrl; });
-      } catch (e) { /* sin imágenes, el resto sigue */ }
-    }
-
-    let draftStates = [];
-    try {
-      const res = await sb.from("draft_states").select("*").eq("season_id", season.id);
-      draftStates = res.data || [];
-    } catch (e) { draftStates = []; }
-
-    let penalties = [];
-    try {
-      const res = await sb.from("penalties").select("*").eq("season_id", season.id).order("created_at");
-      penalties = res.data || [];
-    } catch (e) { penalties = []; }
-
-    // Quién tiene notificaciones activas (solo lo puede leer un admin).
-    let pushSubs = [];
-    if (isAdmin) {
-      try {
-        const res = await sb.from("push_subscriptions").select("email, created_at");
-        pushSubs = res.data || [];
-      } catch (e) { pushSubs = []; }
-    }
 
     if (gen !== editGen) return;
     state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties, draftStates, pushSubs };
@@ -1314,14 +1276,13 @@
     hasSession = !!session;
     sessionEmail = session && session.user ? String(session.user.email || "").toLowerCase() : "";
     if (!session) { isAdmin = false; myPlayerIds = []; playerAccounts = []; return; }
-    try {
-      const { data, error } = await sb.rpc("is_admin");
-      isAdmin = error ? false : data === true;
-    } catch (e) { isAdmin = false; }
-    try {
-      const { data } = await sb.from("player_accounts").select("*");
-      playerAccounts = data || [];
-    } catch (e) { playerAccounts = []; }
+    // Ambas consultas en paralelo.
+    const [adm, acc] = await Promise.all([
+      Promise.resolve(sb.rpc("is_admin")).then(r => r, () => ({ error: true })),
+      Promise.resolve(sb.from("player_accounts").select("*")).then(r => r, () => ({ data: [] }))
+    ]);
+    isAdmin = adm && !adm.error && adm.data === true;
+    playerAccounts = (acc && acc.data) || [];
     myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
   }
   async function adminLogout() {
@@ -2410,10 +2371,13 @@
   function normalizeText(t) {
     return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   }
+  // Versión del catálogo de jugadores: el celular lo guarda y solo lo vuelve a
+  // descargar cuando este número cambia (súbelo cada vez que se actualice market.json).
+  const MARKET_VERSION = 1;
   function loadMarket() {
     if (market || marketLoading) return;
     marketLoading = true; marketError = false;
-    fetch("market.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+    fetch("market.json?v=" + MARKET_VERSION).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
       const idx = {}; d.cols.forEach((c, i) => idx[c] = i);
       market = d.rows.map(row => {
         const o = {}; d.cols.forEach((c, i) => o[c] = row[i]);
