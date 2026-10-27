@@ -684,9 +684,11 @@
   let loading = true;
   let state = null; // { season, players, jornadas: [...], purchases: [...] }
   // Módulos: "torneo" | "equipos" | "mercado"
-  let activeModule = (() => {
-    try { const m = new URLSearchParams(location.search).get("m"); return m || "torneo"; } catch (e) { return "torneo"; }
-  })();
+  // Un link con ?m= (p. ej. al tocar una notificación) abre ese módulo; si no,
+  // al cargar el torneo se elige el de inicio (ver pickStartModule).
+  const urlModule = (() => { try { return new URLSearchParams(location.search).get("m"); } catch (e) { return null; } })();
+  let activeModule = urlModule || "torneo";
+  let startModulePicked = !!urlModule;
   let navOpen = false;
   let teamsTab = null;
   let market = null;          // jugadores del mercado (market.json)
@@ -1294,9 +1296,24 @@
   }
   // Con sesión: carga el torneo y escucha cambios en vivo. Sin sesión no se
   // carga nada (la base tampoco entrega datos sin sesión).
+  // Módulo de inicio: Torneo el día que hay Jornada (hasta las 4 am del día
+  // siguiente, por si se alarga la noche); cualquier otro día, Equipos.
+  function jornadaToday(now) {
+    const local = new Date((now || Date.now()) - 6 * 3600 * 1000 - 4 * 3600 * 1000); // CDMX, con 4 h de margen
+    const today = local.toISOString().slice(0, 10);
+    return state ? state.jornadas.find(j => j.playDate === today) || null : null;
+  }
+  function pickStartModule() {
+    if (startModulePicked || !state) return;
+    startModulePicked = true;
+    const jt = jornadaToday();
+    activeModule = jt ? "torneo" : "equipos";
+    if (jt) activeTab = jt.label; // directo a la pestaña de la Jornada del día
+  }
   async function startSession() {
     loading = true; render();
     await loadSeasonData();
+    pickStartModule();
     loading = false;
     subscribeRealtime();
     render();
@@ -4650,7 +4667,7 @@
       case "group-pk": setGroupShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;
       case "ko-pk": setKOShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;
       case "set-tab": activeTab = el.dataset.tab; render(); break;
-      case "set-module": if (el.dataset.module === "equipos" && activeModule !== "equipos") teamsTab = null; activeModule = el.dataset.module; navOpen = false; render(); window.scrollTo(0, 0); break;
+      case "set-module": startModulePicked = true; if (el.dataset.module === "equipos" && activeModule !== "equipos") teamsTab = null; activeModule = el.dataset.module; navOpen = false; render(); window.scrollTo(0, 0); break;
       case "open-nav": navOpen = true; render(); break;
       case "close-nav": navOpen = false; render(); break;
       case "market-sort": setMarketSort(el.dataset.key); break;
