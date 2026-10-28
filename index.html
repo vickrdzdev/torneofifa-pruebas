@@ -3914,7 +3914,7 @@
       </div>`;
     }
     if (link) return `<div class="jdate-row loc-row"><span>📍</span>${link}</div>`;
-    if (!j.matches.length) return `<div class="jdate-row loc-row"><span class="muted">📍 Ubicación: pendiente${j.console1Id ? " (la pone " + escapeHtml(playerName(j.console1Id)) + ", host)" : ""}.</span></div>`;
+    if (!j.matches.length) return `<div class="jdate-row loc-row"><span class="muted">📍 Ubicación: pendiente</span></div>`;
     return "";
   }
   async function saveLocation(jornadaId) {
