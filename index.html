@@ -3973,7 +3973,7 @@
       <div class="card rsvp-card">
         <h2 class="rsvp-title">🙋 ¿Vas a la ${escapeHtml(j.label)}?</h2>
         <p class="muted rsvp-deadline">${!j.playDate ? "Todavía no hay fecha para esta Jornada." : open
-          ? "Confirma antes del " + escapeHtml(formatCloseAt(dl)) + " para que el host pueda organizar espacio, teles, comida y bebidas."
+          ? "Confirma antes del " + escapeHtml(formatCloseAt(dl)) + " para que el host pueda organizar la jornada."
           : "Ya cerró la confirmación (" + escapeHtml(formatCloseAt(dl)) + ")."}</p>
         ${mine.map(p => `<div class="rsvp-mine">${mine.length > 1 || isAdmin ? `<span class="rsvp-mine-name">${escapeHtml(p.name)}</span>` : ""}<div class="rsvp-mine-btns">${btns(p.id, false)}</div></div>`).join("")}
         <p class="rsvp-summary"><span class="pen-ok">Van: ${groups.yes.length}</span> · <span class="pen-neg">No van: ${groups.no.length}</span> · <span class="muted">Sin responder: ${groups.none.length}</span></p>
