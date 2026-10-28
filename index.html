@@ -713,6 +713,9 @@
   // Un link con ?m= (p. ej. al tocar una notificación) abre ese módulo; si no,
   // al cargar el torneo se elige el de inicio (ver pickStartModule).
   const urlModule = (() => { try { return new URLSearchParams(location.search).get("m"); } catch (e) { return null; } })();
+  // ?j=J1 (desde una notificación): abre Torneo directo en esa Jornada.
+  const urlJornada = (() => { try { return new URLSearchParams(location.search).get("j"); } catch (e) { return null; } })();
+  if (urlJornada) activeTab = urlJornada;
   let activeModule = urlModule || "torneo";
   let startModulePicked = !!urlModule;
   let navOpen = false;
@@ -1175,7 +1178,7 @@
     const { data: applied, error } = await sb.from("penalties").update({ pending: false }).eq("jornada_id", jornadaId).eq("pending", true).select("id, created_at");
     if (error) showToast("No se pudieron aplicar las faltas marcadas; revisa 🚨 Penalizaciones.");
     if (applied && applied.length) { await loadSeasonData(); render(); }
-    await queueNotifs([{ key: "start:" + jornadaId, url: "./?m=torneo", title: "📣 ¡Inicia la " + jj.label + "!",
+    await queueNotifs([{ key: "start:" + jornadaId, url: "./?m=torneo&j=" + encodeURIComponent(jj.label), title: "📣 ¡Inicia la " + jj.label + "!",
       body: "Ya está el calendario: " + new Set(jj.matches.flatMap(m => [m.homeId, m.awayId])).size + " players y " + jj.matches.length + " partidos. ¡Suerte!" }]);
     for (const r of (applied || []).sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""))) await notifyPenalty(r.id);
   }
@@ -3079,15 +3082,15 @@
         // Lunes 10:00 previo: el host agrega la ubicación y los players confirman si van.
         const monBack = daysBackTo(pd, 1);
         const dlRsvp = rsvpDeadline(pd).getTime();
-        rows.push({ key: prefix + "host", kind: "host_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10), url: "./?m=torneo",
+        rows.push({ key: prefix + "host", kind: "host_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10), url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "📍 Eres host de la " + j.label, body: "La " + j.label + " es el " + when + ". Agrega en la app la ubicación (liga de Google Maps). Los players confirman si van hasta el miércoles a las 11:59 pm." });
         // Confirmación de asistencia: aviso a quien no ha respondido (lunes 10:00 y miércoles 6:00 pm)
         // y, al cierre, resumen para el host.
-        rows.push({ key: prefix + "rsvp1", kind: "rsvp_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10, 1), url: "./?m=torneo",
+        rows.push({ key: prefix + "rsvp1", kind: "rsvp_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10, 1), url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "🙋 ¿Vas a la " + j.label + "?", body: "Es el " + when + ". Confirma en la app si vas, antes del miércoles a las 11:59 pm." });
-        rows.push({ key: prefix + "rsvp2", kind: "rsvp_reminder", jornadaId: j.id, at: dlRsvp - (5 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=torneo",
+        rows.push({ key: prefix + "rsvp2", kind: "rsvp_reminder", jornadaId: j.id, at: dlRsvp - (5 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "⏳ Hoy cierra la confirmación", body: "Todavía no confirmas si vas a la " + j.label + " (" + when + "). Tienes hasta las 11:59 pm." });
-        rows.push({ key: prefix + "rsvpsum", kind: "rsvp_summary", jornadaId: j.id, at: dlRsvp + 60 * 1000, url: "./?m=torneo",
+        rows.push({ key: prefix + "rsvpsum", kind: "rsvp_summary", jornadaId: j.id, at: dlRsvp + 60 * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "🙋 Asistencia de la " + j.label, body: "Cerró la confirmación." });
         if (j.jornada_number >= 1) {
           const dl = lineupDeadline(pd).getTime();
@@ -3103,7 +3106,7 @@
           });
           // Miércoles 10:00 previo: consolas actualizadas.
           const wedBack = daysBackTo(pd, 3);
-          rows.push({ key: prefix + "con", kind: "console_reminder", jornadaId: j.id, at: cdmxAt(pd, -wedBack, 10), url: "./?m=torneo",
+          rows.push({ key: prefix + "con", kind: "console_reminder", jornadaId: j.id, at: cdmxAt(pd, -wedBack, 10), url: "./?m=torneo&j=" + encodeURIComponent(j.label),
             title: "🎮 Te toca llevar consola", body: "La " + j.label + " es el " + when + ". Actualiza los equipos de todos en tu consola." });
           // Domingo 5:00 pm: cierra el Mercado.
           const close = marketCloseAt(pd);
@@ -3939,7 +3942,7 @@
     if (url) {
       const when = j.playDate ? " del " + prettyDate(j.playDate) : "";
       let h = 0; for (const c of url) h = (h * 31 + c.charCodeAt(0)) | 0;
-      await queueNotifs([{ key: "loc:" + jornadaId + ":" + (h >>> 0).toString(36), exclude: myPlayerIds[0] || null, url: "./?m=torneo",
+      await queueNotifs([{ key: "loc:" + jornadaId + ":" + (h >>> 0).toString(36), exclude: myPlayerIds[0] || null, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
         title: "📍 Ubicación de la " + j.label, body: "Ya está en la app dónde será la " + j.label + when + ". Toca para verla." }]);
     }
   }
@@ -4058,7 +4061,7 @@
     if (!error && value) {
       const jj = state.jornadas.find(x => x.id === jornadaId);
       const slot = col === "console1_id" ? "Consola 1 (host)" : "Consola 2";
-      await queueNotifs([{ key: "console:" + jornadaId + ":" + col + ":" + value, target: value, url: "./?m=torneo", title: "🎮 Te toca llevar consola",
+      await queueNotifs([{ key: "console:" + jornadaId + ":" + col + ":" + value, target: value, url: "./?m=torneo&j=" + encodeURIComponent(jj.label), title: "🎮 Te toca llevar consola",
         body: "Eres " + slot + " de la " + jj.label + (jj.playDate ? " (" + prettyDate(jj.playDate) + ")" : "") + "." + (jj.jornada_number > 0 ? " Lleva los equipos de todos actualizados." : "") }]);
     }
   }
