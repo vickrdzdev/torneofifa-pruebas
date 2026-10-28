@@ -547,17 +547,26 @@
   .rsvp-card { margin-bottom: 16px; }
   .rsvp-title { font-family: var(--font-display); font-weight: 700; font-size: 20px; margin: 0 0 4px; }
   .rsvp-deadline { margin: 0 0 12px; font-size: 14px; }
-  .rsvp-mine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
-  .rsvp-mine strong { min-width: 70px; }
-  .rsvp-btn { flex: 1 1 120px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 15px; cursor: pointer; }
+  .rsvp-mine { margin: 0 0 12px; }
+  .rsvp-mine-name { display: block; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
+  .rsvp-mine-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .rsvp-btn { min-width: 0; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 15px; cursor: pointer; }
   .rsvp-btn.rsvp-yes.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
   .rsvp-btn.rsvp-no.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
   .rsvp-btn:disabled { opacity: .55; cursor: not-allowed; }
-  .mini-btn.rsvp-yes, .mini-btn.rsvp-no { background: var(--surface-2); color: var(--text-muted); border: 1.5px solid var(--line); }
-  .mini-btn.rsvp-yes.on { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--text); border-color: var(--accent); }
-  .mini-btn.rsvp-no.on { background: color-mix(in srgb, var(--red) 12%, var(--surface)); color: var(--text); border-color: var(--red); }
+  .rsvp-list { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .rsvp-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .rsvp-list li:first-child { border-top: 0; }
+  .rsvp-who { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+  .rsvp-who strong { font-family: var(--font-display); font-size: 17px; }
+  .rsvp-host { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; }
+  .rsvp-status { flex-basis: 100%; font-size: 13px; }
+  .rsvp-ico-group { display: flex; gap: 6px; flex-shrink: 0; }
+  .rsvp-ico { width: 40px; height: 36px; border-radius: 9px; border: 1.5px solid var(--line); background: var(--surface-2); font-size: 16px; cursor: pointer; filter: grayscale(1); opacity: .55; }
+  .rsvp-ico.on { filter: none; opacity: 1; }
+  .rsvp-ico.rsvp-yes.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+  .rsvp-ico.rsvp-no.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
   .rsvp-summary { margin: 4px 0 8px; font-size: 14px; font-weight: 600; }
-  .rsvp-table td { vertical-align: middle; }
   .loc-row { flex-wrap: wrap; }
   .loc-input { flex: 1 1 220px; min-width: 0; }
   .loc-link { font-weight: 700; }
@@ -3954,9 +3963,10 @@
     const btns = (pid, small) => {
       const v = rsvpOf(j, pid);
       const can = isAdmin || (open && myPlayerIds.includes(pid));
-      const cls = small ? "mini-btn" : "rsvp-btn";
-      return `<button class="${cls} rsvp-yes ${v === true ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="1" ${can ? "" : "disabled"}>✅ Voy</button>
-        <button class="${cls} rsvp-no ${v === false ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="0" ${can ? "" : "disabled"}>❌ No voy</button>`;
+      const cls = small ? "rsvp-ico" : "rsvp-btn";
+      const name = escapeHtml(playerName(pid));
+      return `<button class="${cls} rsvp-yes ${v === true ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="1" ${can ? "" : "disabled"} title="${name} va" aria-label="${name} va">${small ? "✅" : "✅ Voy"}</button>
+        <button class="${cls} rsvp-no ${v === false ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="0" ${can ? "" : "disabled"} title="${name} no va" aria-label="${name} no va">${small ? "❌" : "❌ No voy"}</button>`;
     };
     const status = v => v === true ? `<span class="pen-ok">✅ Va</span>` : v === false ? `<span class="pen-neg">❌ No va</span>` : `<span class="muted">Sin responder</span>`;
     return `
@@ -3965,17 +3975,13 @@
         <p class="muted rsvp-deadline">${!j.playDate ? "Todavía no hay fecha para esta Jornada." : open
           ? "Confirma antes del " + escapeHtml(formatCloseAt(dl)) + " para que el host pueda organizar espacio, teles, comida y bebidas."
           : "Ya cerró la confirmación (" + escapeHtml(formatCloseAt(dl)) + ")."}</p>
-        ${mine.map(p => `<div class="rsvp-mine">${mine.length > 1 || isAdmin ? `<strong>${escapeHtml(p.name)}</strong>` : ""}${btns(p.id, false)}</div>`).join("")}
+        ${mine.map(p => `<div class="rsvp-mine">${mine.length > 1 || isAdmin ? `<span class="rsvp-mine-name">${escapeHtml(p.name)}</span>` : ""}<div class="rsvp-mine-btns">${btns(p.id, false)}</div></div>`).join("")}
         <p class="rsvp-summary"><span class="pen-ok">Van: ${groups.yes.length}</span> · <span class="pen-neg">No van: ${groups.no.length}</span> · <span class="muted">Sin responder: ${groups.none.length}</span></p>
-        <div class="table-scroll">
-          <table class="standings compact rsvp-table">
-            <tbody>${state.players.map(p => `<tr>
-              <td class="name-cell">${escapeHtml(p.name)}${j.console1Id === p.id ? ` <span class="muted">· host</span>` : ""}</td>
-              <td style="text-align:left">${status(rsvpOf(j, p.id))}</td>
-              ${isAdmin ? `<td class="actions-cell">${btns(p.id, true)}</td>` : ""}
-            </tr>`).join("")}</tbody>
-          </table>
-        </div>
+        <ul class="rsvp-list">${state.players.map(p => `<li>
+            <div class="rsvp-who"><strong>${escapeHtml(p.name)}</strong>${j.console1Id === p.id ? `<span class="rsvp-host">host</span>` : ""}
+              <span class="rsvp-status">${status(rsvpOf(j, p.id))}</span></div>
+            ${isAdmin ? `<div class="rsvp-ico-group">${btns(p.id, true)}</div>` : ""}
+          </li>`).join("")}</ul>
         ${isAdmin ? `<p class="qual-note">Como admin puedes marcar a quien te avisó por otro lado, incluso después del cierre.</p>` : ""}
       </div>`;
   }
