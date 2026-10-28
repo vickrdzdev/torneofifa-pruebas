@@ -544,6 +544,23 @@
   .team-opt.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
   .team-opt.full { opacity: .5; cursor: not-allowed; }
   .confirm-rows { display: grid; gap: 6px; margin: 12px 0; }
+  .rsvp-card { margin-bottom: 16px; }
+  .rsvp-title { font-family: var(--font-display); font-weight: 700; font-size: 20px; margin: 0 0 4px; }
+  .rsvp-deadline { margin: 0 0 12px; font-size: 14px; }
+  .rsvp-mine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+  .rsvp-mine strong { min-width: 70px; }
+  .rsvp-btn { flex: 1 1 120px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 15px; cursor: pointer; }
+  .rsvp-btn.rsvp-yes.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+  .rsvp-btn.rsvp-no.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
+  .rsvp-btn:disabled { opacity: .55; cursor: not-allowed; }
+  .mini-btn.rsvp-yes, .mini-btn.rsvp-no { background: var(--surface-2); color: var(--text-muted); border: 1.5px solid var(--line); }
+  .mini-btn.rsvp-yes.on { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--text); border-color: var(--accent); }
+  .mini-btn.rsvp-no.on { background: color-mix(in srgb, var(--red) 12%, var(--surface)); color: var(--text); border-color: var(--red); }
+  .rsvp-summary { margin: 4px 0 8px; font-size: 14px; font-weight: 600; }
+  .rsvp-table td { vertical-align: middle; }
+  .loc-row { flex-wrap: wrap; }
+  .loc-input { flex: 1 1 220px; min-width: 0; }
+  .loc-link { font-weight: 700; }
   .push-banner { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-size: 14px; }
   .push-banner > span { flex: 1; min-width: 0; }
   .push-banner .push-banner-btn { width: auto; padding: 7px 14px; font-size: 14px; flex-shrink: 0; }
@@ -999,11 +1016,12 @@
     const signed = (bucket, list) => list.length
       ? Promise.resolve(sb.storage.from(bucket).createSignedUrls(list, 60 * 60 * 12)).then(r => (r && r.data) || [], () => [])
       : Promise.resolve([]);
-    const [attendance, matches, logoSigned, lineupSigned] = await Promise.all([
+    const [attendance, matches, logoSigned, lineupSigned, rsvps] = await Promise.all([
       jornadaIds.length ? rows(sb.from("jornada_attendance").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([]),
       jornadaIds.length ? rows(sb.from("matches").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([]),
       signed("logos", logoPaths),
-      signed("lineups", paths)
+      signed("lineups", paths),
+      jornadaIds.length ? rows(sb.from("jornada_rsvps").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([])
     ]);
     const logoUrls = {}, lineupUrls = {};
     logoSigned.forEach(x => { if (x && x.signedUrl) logoUrls[x.path] = x.signedUrl; });
@@ -1031,6 +1049,8 @@
       const jornada = {
         id: jr.id, jornada_number: jr.jornada_number, label: jr.label, playDate: jr.play_date || null,
         console1Id: jr.console1_id || null, console2Id: jr.console2_id || null,
+        locationUrl: jr.location_url || null,
+        rsvps: rsvps.filter(r => r.jornada_id === jr.id),
         updatedAt: allM.reduce((mx, m) => (m.created_at && m.created_at > mx ? m.created_at : mx), ""),
         activeIds, matches: groupM.map(mapMatchRow), playoff
       };
@@ -1396,6 +1416,7 @@
     realtimeChannel = sb.channel("torneo-fc27-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "jornada_attendance" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "jornada_rsvps" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "players" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "jornadas" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "seasons" }, scheduleReload)
@@ -1653,6 +1674,7 @@
         <h2 style="font-family:var(--font-display);font-weight:700;font-size:20px;margin:0 0 4px;">Asistencia — ${j.label}</h2>
         <p class="attend-note">Marca quiénes juegan esta Jornada (mínimo 4). Si alguien llegó tarde o llevó la consola sin los equipos actualizados, desmarca su casilla: la falta se aplica en 🚨 Penalizaciones (y se avisa al player) hasta que des clic en "Generar calendario". El calendario y la Liguilla se generan según quién participe.</p>
         ${locked ? `<p class="lock-note">🔒 Solo el admin puede editar la asistencia.</p>` : ""}
+        ${(j.rsvps || []).some(r => r.going) ? `<button class="btn-secondary" data-action="attendance-from-rsvps" data-j="${j.id}" style="margin:0 0 10px;">🙋 Marcar según confirmaciones</button>` : ""}
         ${registerMatrixHtml(j)}
         ${!enough && !locked ? '<p class="attend-warn">Selecciona al menos 4 players.</p>' : ""}
         ${!locked ? `<button class="btn-primary" data-action="generate-jornada" data-j="${j.id}" ${enough ? "" : "disabled"} style="max-width:280px;">Generar calendario</button>` : ""}
@@ -3045,10 +3067,19 @@
       const rows = [];
       if (j.playDate && !j.matches.length) {
         const pd = j.playDate, when = prettyDate(pd);
-        // Lunes 10:00 previo: el host confirma asistencia.
+        // Lunes 10:00 previo: el host agrega la ubicación y los players confirman si van.
         const monBack = daysBackTo(pd, 1);
+        const dlRsvp = rsvpDeadline(pd).getTime();
         rows.push({ key: prefix + "host", kind: "host_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10), url: "./?m=torneo",
-          title: "📅 Confirma la asistencia", body: "Eres host (Consola 1) de la " + j.label + " del " + when + ". Manda mensaje a los players para confirmar quién va." });
+          title: "📍 Eres host de la " + j.label, body: "La " + j.label + " es el " + when + ". Agrega en la app la ubicación (liga de Google Maps). Los players confirman si van hasta el miércoles a las 11:59 pm." });
+        // Confirmación de asistencia: aviso a quien no ha respondido (lunes 10:00 y miércoles 6:00 pm)
+        // y, al cierre, resumen para el host.
+        rows.push({ key: prefix + "rsvp1", kind: "rsvp_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10, 1), url: "./?m=torneo",
+          title: "🙋 ¿Vas a la " + j.label + "?", body: "Es el " + when + ". Confirma en la app si vas, antes del miércoles a las 11:59 pm." });
+        rows.push({ key: prefix + "rsvp2", kind: "rsvp_reminder", jornadaId: j.id, at: dlRsvp - (5 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=torneo",
+          title: "⏳ Hoy cierra la confirmación", body: "Todavía no confirmas si vas a la " + j.label + " (" + when + "). Tienes hasta las 11:59 pm." });
+        rows.push({ key: prefix + "rsvpsum", kind: "rsvp_summary", jornadaId: j.id, at: dlRsvp + 60 * 1000, url: "./?m=torneo",
+          title: "🙋 Asistencia de la " + j.label, body: "Cerró la confirmación." });
         if (j.jornada_number >= 1) {
           const dl = lineupDeadline(pd).getTime();
           [18, 22].forEach(h => rows.push({ key: prefix + "lu" + h, kind: "lineup_reminder", jornadaId: j.id, at: dl - (24 - h) * 3600 * 1000, url: "./?m=alineaciones",
@@ -3870,6 +3901,112 @@
     render();
     showToast(email ? "Correo ligado a " + playerName(playerId) + "." : "Acceso quitado a " + playerName(playerId) + ".");
   }
+  // ---- Ubicación de la Jornada (liga de Google Maps que pone el host) ----
+  function canEditLocation(j) { return isAdmin || (!!j.console1Id && myPlayerIds.includes(j.console1Id)); }
+  function locationHtml(j) {
+    const link = j.locationUrl ? `<a class="loc-link" href="${escapeHtml(j.locationUrl)}" target="_blank" rel="noopener">Ver ubicación en Google Maps ↗</a>` : "";
+    if (canEditLocation(j)) {
+      return `<div class="jdate-row loc-row">
+        <label for="loc-${j.id}">📍 Ubicación:</label>
+        <input type="url" class="text-input loc-input" id="loc-${j.id}" placeholder="Pega aquí la liga de Google Maps" value="${escapeHtml(j.locationUrl || "")}">
+        <button class="btn-secondary" data-action="save-location" data-j="${j.id}">Guardar</button>
+        ${link}
+      </div>`;
+    }
+    if (link) return `<div class="jdate-row loc-row"><span>📍</span>${link}</div>`;
+    if (!j.matches.length) return `<div class="jdate-row loc-row"><span class="muted">📍 Ubicación: pendiente${j.console1Id ? " (la pone " + escapeHtml(playerName(j.console1Id)) + ", host)" : ""}.</span></div>`;
+    return "";
+  }
+  async function saveLocation(jornadaId) {
+    const j = state.jornadas.find(x => x.id === jornadaId);
+    if (!j || !canEditLocation(j)) return;
+    let url = (($("#loc-" + jornadaId) || {}).value || "").trim();
+    if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+    if (url && !/^https:\/\//i.test(url)) url = url.replace(/^http:/i, "https:");
+    const { error } = await sb.rpc("set_jornada_location", { p_jornada: jornadaId, p_url: url || null });
+    if (error) { showToast(/https/.test(error.message || "") ? "La liga debe empezar con https://" : "No se pudo guardar la ubicación."); return; }
+    showToast(url ? "📍 Ubicación guardada." : "Ubicación borrada.");
+    await loadSeasonData(); render();
+    if (url) {
+      const when = j.playDate ? " del " + prettyDate(j.playDate) : "";
+      let h = 0; for (const c of url) h = (h * 31 + c.charCodeAt(0)) | 0;
+      await queueNotifs([{ key: "loc:" + jornadaId + ":" + (h >>> 0).toString(36), exclude: myPlayerIds[0] || null, url: "./?m=torneo",
+        title: "📍 Ubicación de la " + j.label, body: "Ya está en la app dónde será la " + j.label + when + ". Toca para verla." }]);
+    }
+  }
+
+  // ---- Confirmación de asistencia (antes del miércoles previo a la Jornada) ----
+  // Miércoles previo a la fecha de la Jornada, 11:59:59 pm (CDMX). Si cae en miércoles, el anterior.
+  function rsvpDeadline(playDate) {
+    if (!playDate) return null;
+    return new Date(cdmxAt(playDate, -daysBackTo(playDate, 3), 23, 59) + 59 * 1000);
+  }
+  function rsvpOf(j, playerId) {
+    const r = (j.rsvps || []).find(x => x.player_id === playerId);
+    return r ? r.going : null;
+  }
+  function rsvpCardHtml(j) {
+    const dl = rsvpDeadline(j.playDate);
+    const open = !dl || Date.now() <= dl.getTime();
+    const mine = state.players.filter(p => myPlayerIds.includes(p.id));
+    const groups = { yes: [], no: [], none: [] };
+    state.players.forEach(p => { const v = rsvpOf(j, p.id); groups[v === true ? "yes" : v === false ? "no" : "none"].push(p); });
+    const btns = (pid, small) => {
+      const v = rsvpOf(j, pid);
+      const can = isAdmin || (open && myPlayerIds.includes(pid));
+      const cls = small ? "mini-btn" : "rsvp-btn";
+      return `<button class="${cls} rsvp-yes ${v === true ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="1" ${can ? "" : "disabled"}>✅ Voy</button>
+        <button class="${cls} rsvp-no ${v === false ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="0" ${can ? "" : "disabled"}>❌ No voy</button>`;
+    };
+    const status = v => v === true ? `<span class="pen-ok">✅ Va</span>` : v === false ? `<span class="pen-neg">❌ No va</span>` : `<span class="muted">Sin responder</span>`;
+    return `
+      <div class="card rsvp-card">
+        <h2 class="rsvp-title">🙋 ¿Vas a la ${escapeHtml(j.label)}?</h2>
+        <p class="muted rsvp-deadline">${!j.playDate ? "Todavía no hay fecha para esta Jornada." : open
+          ? "Confirma antes del " + escapeHtml(formatCloseAt(dl)) + " para que el host pueda organizar espacio, teles, comida y bebidas."
+          : "Ya cerró la confirmación (" + escapeHtml(formatCloseAt(dl)) + ")."}</p>
+        ${mine.map(p => `<div class="rsvp-mine">${mine.length > 1 || isAdmin ? `<strong>${escapeHtml(p.name)}</strong>` : ""}${btns(p.id, false)}</div>`).join("")}
+        <p class="rsvp-summary"><span class="pen-ok">Van: ${groups.yes.length}</span> · <span class="pen-neg">No van: ${groups.no.length}</span> · <span class="muted">Sin responder: ${groups.none.length}</span></p>
+        <div class="table-scroll">
+          <table class="standings compact rsvp-table">
+            <tbody>${state.players.map(p => `<tr>
+              <td class="name-cell">${escapeHtml(p.name)}${j.console1Id === p.id ? ` <span class="muted">· host</span>` : ""}</td>
+              <td style="text-align:left">${status(rsvpOf(j, p.id))}</td>
+              ${isAdmin ? `<td class="actions-cell">${btns(p.id, true)}</td>` : ""}
+            </tr>`).join("")}</tbody>
+          </table>
+        </div>
+        ${isAdmin ? `<p class="qual-note">Como admin puedes marcar a quien te avisó por otro lado, incluso después del cierre.</p>` : ""}
+      </div>`;
+  }
+  async function setRsvp(jornadaId, playerId, going) {
+    const j = state.jornadas.find(x => x.id === jornadaId);
+    if (!j || j.matches.length) return;
+    const dl = rsvpDeadline(j.playDate);
+    if (!isAdmin && (!myPlayerIds.includes(playerId) || (dl && Date.now() > dl.getTime()))) { showToast("Ya cerró la confirmación de asistencia."); return; }
+    const { error } = await sb.from("jornada_rsvps").upsert({ jornada_id: jornadaId, player_id: playerId, going }, { onConflict: "jornada_id,player_id" });
+    if (error) { showToast(/cerr/i.test(error.message || "") ? "Ya cerró la confirmación de asistencia." : "No se pudo guardar tu respuesta."); return; }
+    showToast(going ? "✅ Confirmado: vas a la " + j.label + "." : "Listo: no vas a la " + j.label + ".");
+    await loadSeasonData(); render();
+  }
+  // Admin: marca la asistencia de la matriz según las confirmaciones (van = marcados).
+  async function attendanceFromRsvps(jornadaId) {
+    const j = state.jornadas.find(x => x.id === jornadaId);
+    if (!isAdmin || !j || j.matches.length) return;
+    const going = state.players.filter(p => rsvpOf(j, p.id) === true).map(p => p.id);
+    const toAdd = going.filter(id => !j.activeIds.includes(id));
+    const toRemove = j.activeIds.filter(id => !going.includes(id));
+    try {
+      if (toRemove.length) {
+        await sb.from("jornada_attendance").delete().eq("jornada_id", jornadaId).in("player_id", toRemove);
+        await sb.from("penalties").delete().eq("jornada_id", jornadaId).in("player_id", toRemove).in("kind", ["retardo", "consola"]);
+      }
+      if (toAdd.length) await sb.from("jornada_attendance").insert(toAdd.map(id => ({ jornada_id: jornadaId, player_id: id })));
+    } catch (e) { showToast("No se pudo actualizar la asistencia."); }
+    await loadSeasonData(); render();
+    showToast("Asistencia marcada según las confirmaciones (" + going.length + " van).");
+  }
+
   function jornadaDateHtml(j) {
     const pretty = j.playDate
       ? new Date(j.playDate + "T12:00:00Z").toLocaleDateString("es-MX", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" })
@@ -3885,8 +4022,8 @@
         <label for="jdate-${j.id}">📅 Fecha de la ${j.label}:</label>
         <input type="date" class="text-input jdate-input" id="jdate-${j.id}" data-j="${j.id}" value="${j.playDate || ""}">
         <span class="muted">${note}</span>
-      </div>${consolesHtml(j)}`;
-    return (pretty ? `<div class="jdate-row"><span>📅 ${escapeHtml(pretty)}</span><span class="muted">${closeTxt}</span></div>` : "") + consolesHtml(j);
+      </div>${consolesHtml(j)}${locationHtml(j)}`;
+    return (pretty ? `<div class="jdate-row"><span>📅 ${escapeHtml(pretty)}</span><span class="muted">${closeTxt}</span></div>` : "") + consolesHtml(j) + locationHtml(j);
   }
   // Quién lleva consola en cada Jornada (con los equipos de todos actualizados).
   const CONSOLE_SLOTS = [["console1Id", "console1_id", "🏠 Consola 1"], ["console2Id", "console2_id", "🎮 Consola 2"]];
@@ -3934,7 +4071,7 @@
     const j = state.jornadas.find(x => x.label === activeTab);
 
     let body = "";
-    if (j.matches.length === 0) body = jornadaDateHtml(j) + renderAttendanceStage(j);
+    if (j.matches.length === 0) body = jornadaDateHtml(j) + rsvpCardHtml(j) + renderAttendanceStage(j);
     else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
 
     const tabs = `
@@ -4663,6 +4800,9 @@
       case "toggle-attendance": toggleAttendance(el.dataset.j, el.dataset.p); break;
       case "toggle-flag": toggleJornadaFlag(el.dataset.j, el.dataset.p, el.dataset.kind); break;
       case "generate-jornada": generateJornada(el.dataset.j); break;
+      case "rsvp-set": setRsvp(el.dataset.j, el.dataset.p, el.dataset.v === "1"); break;
+      case "save-location": saveLocation(el.dataset.j); break;
+      case "attendance-from-rsvps": attendanceFromRsvps(el.dataset.j); break;
       case "generate-liguilla": generateLiguilla(el.dataset.j); break;
       case "group-pk": setGroupShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;
       case "ko-pk": setKOShootout(el.dataset.j, el.dataset.match, el.dataset.winner); break;

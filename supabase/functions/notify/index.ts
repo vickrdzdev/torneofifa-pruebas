@@ -31,8 +31,17 @@ async function recipients(row: Row): Promise<string[] | "all"> {
       // Aviso personal (falta al vencer el plazo): solo si ese player sí la debe.
       return row.target_player ? missing.filter((id) => id === row.target_player) : missing;
     }
+    case "rsvp_reminder": {
+      // Solo a quien todavía no confirma si va.
+      if (!jr) return [];
+      const { data: players } = await sb.from("players").select("id").eq("season_id", jr.season_id);
+      const { data: rs } = await sb.from("jornada_rsvps").select("player_id").eq("jornada_id", jr.id);
+      const answered = new Set((rs || []).map((r) => r.player_id));
+      return (players || []).map((p) => p.id).filter((id) => !answered.has(id));
+    }
     case "console_reminder":
       return jr ? [jr.console1_id, jr.console2_id].filter(Boolean) as string[] : [];
+    case "rsvp_summary":
     case "host_reminder":
       return jr && jr.console1_id ? [jr.console1_id] : [];
   }
@@ -55,6 +64,18 @@ async function subsFor(who: string[] | "all") {
   return (subs || []).filter((s) => emails.includes(String(s.email).toLowerCase()));
 }
 
+// Resumen para el host al cerrar la confirmación: quién va, quién no y quién no respondió.
+async function rsvpSummary(jornadaId: string) {
+  const { data: jr } = await sb.from("jornadas").select("season_id").eq("id", jornadaId).maybeSingle();
+  if (!jr) return "Cerró la confirmación.";
+  const { data: players } = await sb.from("players").select("id, name").eq("season_id", jr.season_id).order("sort_order");
+  const { data: rs } = await sb.from("jornada_rsvps").select("player_id, going").eq("jornada_id", jornadaId);
+  const by = new Map((rs || []).map((r) => [r.player_id, r.going]));
+  const list = (f: (v: boolean | undefined) => boolean) => (players || []).filter((p) => f(by.get(p.id))).map((p) => p.name);
+  const yes = list((v) => v === true), no = list((v) => v === false), none = list((v) => v === undefined);
+  return `Van ${yes.length}: ${yes.join(", ") || "nadie"}.` + (no.length ? `\nNo van: ${no.join(", ")}.` : "") + (none.length ? `\nSin responder: ${none.join(", ")}.` : "");
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Envía los avisos que ya tocan. Los de un mismo lote salen en orden: si un
@@ -72,6 +93,7 @@ async function processDue(summary: string[]) {
       continue;
     }
     const subs = await subsFor(await recipients(row));
+    if (row.kind === "rsvp_summary" && row.jornada_id) row.body = await rsvpSummary(row.jornada_id);
     const payload = JSON.stringify({ title: row.title, body: row.body, image: row.image, url: row.url || "./", tag: row.key });
     const results = await Promise.all(subs.map(async (s) => {
       const gap = 1000 - (Date.now() - (lastSent.get(s.endpoint) || 0));
