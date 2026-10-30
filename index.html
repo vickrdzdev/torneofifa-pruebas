@@ -3088,9 +3088,9 @@
         // Confirmación de asistencia: aviso a quien no ha respondido (lunes 10:00 y miércoles 6:00 pm)
         // y, al cierre, resumen para el host.
         rows.push({ key: prefix + "rsvp1", kind: "rsvp_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10, 1), url: "./?m=torneo&j=" + encodeURIComponent(j.label),
-          title: "🙋 ¿Vas a la " + j.label + "?", body: "Es el " + when + ". Confirma en la app si vas y si te quedas al post-FIFA, antes del miércoles a las 11:59 pm." });
+          title: "🙋 ¿Vas a la " + j.label + "?", body: "Es el " + when + ". Confirma en la app si vas, antes del miércoles a las 11:59 pm." });
         rows.push({ key: prefix + "rsvp2", kind: "rsvp_reminder", jornadaId: j.id, at: dlRsvp - (5 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
-          title: "⏳ Hoy cierra la confirmación", body: "Te falta confirmar si vas a la " + j.label + " (" + when + ") o si te quedas al post-FIFA. Tienes hasta las 11:59 pm." });
+          title: "⏳ Hoy cierra la confirmación", body: "Todavía no confirmas si vas a la " + j.label + " (" + when + "). Tienes hasta las 11:59 pm." });
         rows.push({ key: prefix + "rsvpsum", kind: "rsvp_summary", jornadaId: j.id, at: dlRsvp + 60 * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "🙋 Asistencia de la " + j.label, body: "Cerró la confirmación." });
         if (j.jornada_number >= 1) {

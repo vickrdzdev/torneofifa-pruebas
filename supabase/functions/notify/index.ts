@@ -32,11 +32,11 @@ async function recipients(row: Row): Promise<string[] | "all"> {
       return row.target_player ? missing.filter((id) => id === row.target_player) : missing;
     }
     case "rsvp_reminder": {
-      // Solo a quien le falta contestar: si va a la Jornada o, si va, si se queda al post-FIFA.
+      // Solo a quien todavía no confirma si va (el post-FIFA no lleva recordatorio).
       if (!jr) return [];
       const { data: players } = await sb.from("players").select("id").eq("season_id", jr.season_id);
-      const { data: rs } = await sb.from("jornada_rsvps").select("player_id, going, post").eq("jornada_id", jr.id);
-      const done = new Set((rs || []).filter((r) => r.going === false || (r.going === true && r.post != null)).map((r) => r.player_id));
+      const { data: rs } = await sb.from("jornada_rsvps").select("player_id, going").eq("jornada_id", jr.id);
+      const done = new Set((rs || []).filter((r) => r.going != null).map((r) => r.player_id));
       return (players || []).map((p) => p.id).filter((id) => !done.has(id));
     }
     case "console_reminder":
