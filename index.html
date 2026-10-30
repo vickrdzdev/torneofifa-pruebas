@@ -549,6 +549,7 @@
   .rsvp-deadline { margin: 0 0 12px; font-size: 14px; }
   .rsvp-mine { margin: 0 0 12px; }
   .rsvp-mine-name { display: block; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
+  .rsvp-locked { margin: 0; font-size: 14px; }
   .rsvp-mine-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .rsvp-btn { min-width: 0; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 15px; cursor: pointer; }
   .rsvp-btn.rsvp-yes.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
@@ -3087,9 +3088,9 @@
         // Confirmación de asistencia: aviso a quien no ha respondido (lunes 10:00 y miércoles 6:00 pm)
         // y, al cierre, resumen para el host.
         rows.push({ key: prefix + "rsvp1", kind: "rsvp_reminder", jornadaId: j.id, at: cdmxAt(pd, -monBack, 10, 1), url: "./?m=torneo&j=" + encodeURIComponent(j.label),
-          title: "🙋 ¿Vas a la " + j.label + "?", body: "Es el " + when + ". Confirma en la app si vas, antes del miércoles a las 11:59 pm." });
+          title: "🙋 ¿Vas a la " + j.label + "?", body: "Es el " + when + ". Confirma en la app si vas y si te quedas al post-FIFA, antes del miércoles a las 11:59 pm." });
         rows.push({ key: prefix + "rsvp2", kind: "rsvp_reminder", jornadaId: j.id, at: dlRsvp - (5 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
-          title: "⏳ Hoy cierra la confirmación", body: "Todavía no confirmas si vas a la " + j.label + " (" + when + "). Tienes hasta las 11:59 pm." });
+          title: "⏳ Hoy cierra la confirmación", body: "Te falta confirmar si vas a la " + j.label + " (" + when + ") o si te quedas al post-FIFA. Tienes hasta las 11:59 pm." });
         rows.push({ key: prefix + "rsvpsum", kind: "rsvp_summary", jornadaId: j.id, at: dlRsvp + 60 * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "🙋 Asistencia de la " + j.label, body: "Cerró la confirmación." });
         if (j.jornada_number >= 1) {
@@ -3957,36 +3958,73 @@
     const r = (j.rsvps || []).find(x => x.player_id === playerId);
     return r ? r.going : null;
   }
-  function rsvpCardHtml(j) {
+  function postOf(j, playerId) {
+    const r = (j.rsvps || []).find(x => x.player_id === playerId);
+    return r && r.post != null ? r.post : null;
+  }
+  // Tarjeta de respuesta Sí/No por player (asistencia a la Jornada o post-FIFA).
+  function answerCardHtml(j, c) {
     const dl = rsvpDeadline(j.playDate);
     const open = !dl || Date.now() <= dl.getTime();
     const mine = state.players.filter(p => myPlayerIds.includes(p.id));
     const groups = { yes: [], no: [], none: [] };
-    state.players.forEach(p => { const v = rsvpOf(j, p.id); groups[v === true ? "yes" : v === false ? "no" : "none"].push(p); });
+    state.players.forEach(p => { const v = c.get(p.id); groups[v === true ? "yes" : v === false ? "no" : "none"].push(p); });
     const btns = (pid, small) => {
-      const v = rsvpOf(j, pid);
-      const can = isAdmin || (open && myPlayerIds.includes(pid));
+      const v = c.get(pid);
+      const can = (isAdmin || (open && myPlayerIds.includes(pid))) && !c.locked(pid);
       const cls = small ? "rsvp-ico" : "rsvp-btn";
       const name = escapeHtml(playerName(pid));
-      return `<button class="${cls} rsvp-yes ${v === true ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="1" ${can ? "" : "disabled"} title="${name} va" aria-label="${name} va">${small ? "✅" : "✅ Voy"}</button>
-        <button class="${cls} rsvp-no ${v === false ? "on" : ""}" data-action="rsvp-set" data-j="${j.id}" data-p="${pid}" data-v="0" ${can ? "" : "disabled"} title="${name} no va" aria-label="${name} no va">${small ? "❌" : "❌ No voy"}</button>`;
+      return `<button class="${cls} rsvp-yes ${v === true ? "on" : ""}" data-action="${c.action}" data-j="${j.id}" data-p="${pid}" data-v="1" ${can ? "" : "disabled"} title="${name}: ${c.yesShort}" aria-label="${name}: ${c.yesShort}">${small ? "✅" : "✅ " + c.yesBtn}</button>
+        <button class="${cls} rsvp-no ${v === false ? "on" : ""}" data-action="${c.action}" data-j="${j.id}" data-p="${pid}" data-v="0" ${can ? "" : "disabled"} title="${name}: ${c.noShort}" aria-label="${name}: ${c.noShort}">${small ? "❌" : "❌ " + c.noBtn}</button>`;
     };
-    const status = v => v === true ? `<span class="pen-ok">✅ Va</span>` : v === false ? `<span class="pen-neg">❌ No va</span>` : `<span class="muted">Sin responder</span>`;
+    const status = pid => {
+      if (c.locked(pid)) return `<span class="muted">${c.lockedTxt}</span>`;
+      const v = c.get(pid);
+      return v === true ? `<span class="pen-ok">✅ ${c.yesShort}</span>` : v === false ? `<span class="pen-neg">❌ ${c.noShort}</span>` : `<span class="muted">Sin responder</span>`;
+    };
     return `
       <div class="card rsvp-card">
-        <h2 class="rsvp-title">🙋 ¿Vas a la ${escapeHtml(j.label)}?</h2>
+        <h2 class="rsvp-title">${c.title}</h2>
         <p class="muted rsvp-deadline">${!j.playDate ? "Todavía no hay fecha para esta Jornada." : open
-          ? "Confirma antes del " + escapeHtml(formatCloseAt(dl)) + " para que el host pueda organizar la jornada."
+          ? "Confirma antes del " + escapeHtml(formatCloseAt(dl)) + " para que el host pueda organizar " + c.purpose + "."
           : "Ya cerró la confirmación (" + escapeHtml(formatCloseAt(dl)) + ")."}</p>
-        ${mine.map(p => `<div class="rsvp-mine">${mine.length > 1 || isAdmin ? `<span class="rsvp-mine-name">${escapeHtml(p.name)}</span>` : ""}<div class="rsvp-mine-btns">${btns(p.id, false)}</div></div>`).join("")}
-        <p class="rsvp-summary"><span class="pen-ok">Van: ${groups.yes.length}</span> · <span class="pen-neg">No van: ${groups.no.length}</span> · <span class="muted">Sin responder: ${groups.none.length}</span></p>
+        ${mine.map(p => `<div class="rsvp-mine">${mine.length > 1 || isAdmin ? `<span class="rsvp-mine-name">${escapeHtml(p.name)}</span>` : ""}${c.locked(p.id) ? `<p class="muted rsvp-locked">${c.lockedTxt}.</p>` : `<div class="rsvp-mine-btns">${btns(p.id, false)}</div>`}</div>`).join("")}
+        <p class="rsvp-summary"><span class="pen-ok">${c.sumYes}: ${groups.yes.length}</span> · <span class="pen-neg">${c.sumNo}: ${groups.no.length}</span> · <span class="muted">Sin responder: ${groups.none.length}</span></p>
         <ul class="rsvp-list">${state.players.map(p => `<li>
             <div class="rsvp-who"><strong>${escapeHtml(p.name)}</strong>${j.console1Id === p.id ? `<span class="rsvp-host">host</span>` : ""}
-              <span class="rsvp-status">${status(rsvpOf(j, p.id))}</span></div>
-            ${isAdmin ? `<div class="rsvp-ico-group">${btns(p.id, true)}</div>` : ""}
+              <span class="rsvp-status">${status(p.id)}</span></div>
+            ${isAdmin && !c.locked(p.id) ? `<div class="rsvp-ico-group">${btns(p.id, true)}</div>` : ""}
           </li>`).join("")}</ul>
         ${isAdmin ? `<p class="qual-note">Como admin puedes marcar a quien te avisó por otro lado, incluso después del cierre.</p>` : ""}
       </div>`;
+  }
+  function rsvpCardHtml(j) {
+    return answerCardHtml(j, {
+      title: "🙋 ¿Vas a la " + escapeHtml(j.label) + "?", purpose: "la jornada", action: "rsvp-set",
+      yesBtn: "Voy", noBtn: "No voy", yesShort: "Va", noShort: "No va", sumYes: "Van", sumNo: "No van",
+      get: pid => rsvpOf(j, pid), locked: () => false
+    });
+  }
+  // Post-FIFA: lo que sigue después de la Jornada y el Fast Track. Quien no va a la
+  // Jornada cuenta como que no se queda y no tiene que contestar.
+  function postCardHtml(j) {
+    return answerCardHtml(j, {
+      title: "🍻 ¿Te quedas al post-FIFA?", purpose: "el post-FIFA", action: "post-set",
+      yesBtn: "Me quedo", noBtn: "No me quedo", yesShort: "Se queda", noShort: "No se queda", sumYes: "Se quedan", sumNo: "No se quedan",
+      get: pid => rsvpOf(j, pid) === false ? false : postOf(j, pid),
+      locked: pid => rsvpOf(j, pid) === false, lockedTxt: "No va a la jornada"
+    });
+  }
+  async function setPost(jornadaId, playerId, post) {
+    const j = state.jornadas.find(x => x.id === jornadaId);
+    if (!j || j.matches.length) return;
+    const dl = rsvpDeadline(j.playDate);
+    if (!isAdmin && (!myPlayerIds.includes(playerId) || (dl && Date.now() > dl.getTime()))) { showToast("Ya cerró la confirmación."); return; }
+    const { error } = await sb.from("jornada_rsvps").upsert({ jornada_id: jornadaId, player_id: playerId, post }, { onConflict: "jornada_id,player_id" });
+    if (error) { showToast(/cerr/i.test(error.message || "") ? "Ya cerró la confirmación." : "No se pudo guardar tu respuesta."); return; }
+    const me = myPlayerIds.includes(playerId), who = playerName(playerId);
+    showToast(post ? "🍻 " + (me ? "Te quedas" : who + " se queda") + " al post-FIFA." : "Listo: " + (me ? "no te quedas" : who + " no se queda") + " al post-FIFA.");
+    await loadSeasonData(); render();
   }
   async function setRsvp(jornadaId, playerId, going) {
     const j = state.jornadas.find(x => x.id === jornadaId);
@@ -3995,7 +4033,8 @@
     if (!isAdmin && (!myPlayerIds.includes(playerId) || (dl && Date.now() > dl.getTime()))) { showToast("Ya cerró la confirmación de asistencia."); return; }
     const { error } = await sb.from("jornada_rsvps").upsert({ jornada_id: jornadaId, player_id: playerId, going }, { onConflict: "jornada_id,player_id" });
     if (error) { showToast(/cerr/i.test(error.message || "") ? "Ya cerró la confirmación de asistencia." : "No se pudo guardar tu respuesta."); return; }
-    showToast(going ? "✅ Confirmado: vas a la " + j.label + "." : "Listo: no vas a la " + j.label + ".");
+    const me = myPlayerIds.includes(playerId), who = playerName(playerId);
+    showToast(going ? "✅ " + (me ? "Confirmado: vas a la " : who + " va a la ") + j.label + "." : (me ? "Listo: no vas a la " : who + " no va a la ") + j.label + ".");
     await loadSeasonData(); render();
   }
   // Admin: marca la asistencia de la matriz según las confirmaciones (van = marcados).
@@ -4080,7 +4119,7 @@
     const j = state.jornadas.find(x => x.label === activeTab);
 
     let body = "";
-    if (j.matches.length === 0) body = jornadaDateHtml(j) + rsvpCardHtml(j) + renderAttendanceStage(j);
+    if (j.matches.length === 0) body = jornadaDateHtml(j) + rsvpCardHtml(j) + postCardHtml(j) + renderAttendanceStage(j);
     else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
 
     const tabs = `
@@ -4810,6 +4849,7 @@
       case "toggle-flag": toggleJornadaFlag(el.dataset.j, el.dataset.p, el.dataset.kind); break;
       case "generate-jornada": generateJornada(el.dataset.j); break;
       case "rsvp-set": setRsvp(el.dataset.j, el.dataset.p, el.dataset.v === "1"); break;
+      case "post-set": setPost(el.dataset.j, el.dataset.p, el.dataset.v === "1"); break;
       case "save-location": saveLocation(el.dataset.j); break;
       case "attendance-from-rsvps": attendanceFromRsvps(el.dataset.j); break;
       case "generate-liguilla": generateLiguilla(el.dataset.j); break;

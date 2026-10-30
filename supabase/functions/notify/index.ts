@@ -32,12 +32,12 @@ async function recipients(row: Row): Promise<string[] | "all"> {
       return row.target_player ? missing.filter((id) => id === row.target_player) : missing;
     }
     case "rsvp_reminder": {
-      // Solo a quien todavía no confirma si va.
+      // Solo a quien le falta contestar: si va a la Jornada o, si va, si se queda al post-FIFA.
       if (!jr) return [];
       const { data: players } = await sb.from("players").select("id").eq("season_id", jr.season_id);
-      const { data: rs } = await sb.from("jornada_rsvps").select("player_id").eq("jornada_id", jr.id);
-      const answered = new Set((rs || []).map((r) => r.player_id));
-      return (players || []).map((p) => p.id).filter((id) => !answered.has(id));
+      const { data: rs } = await sb.from("jornada_rsvps").select("player_id, going, post").eq("jornada_id", jr.id);
+      const done = new Set((rs || []).filter((r) => r.going === false || (r.going === true && r.post != null)).map((r) => r.player_id));
+      return (players || []).map((p) => p.id).filter((id) => !done.has(id));
     }
     case "console_reminder":
       return jr ? [jr.console1_id, jr.console2_id].filter(Boolean) as string[] : [];
@@ -69,11 +69,13 @@ async function rsvpSummary(jornadaId: string) {
   const { data: jr } = await sb.from("jornadas").select("season_id").eq("id", jornadaId).maybeSingle();
   if (!jr) return "Cerró la confirmación.";
   const { data: players } = await sb.from("players").select("id, name").eq("season_id", jr.season_id).order("sort_order");
-  const { data: rs } = await sb.from("jornada_rsvps").select("player_id, going").eq("jornada_id", jornadaId);
-  const by = new Map((rs || []).map((r) => [r.player_id, r.going]));
-  const list = (f: (v: boolean | undefined) => boolean) => (players || []).filter((p) => f(by.get(p.id))).map((p) => p.name);
-  const yes = list((v) => v === true), no = list((v) => v === false), none = list((v) => v === undefined);
-  return `Van ${yes.length}: ${yes.join(", ") || "nadie"}.` + (no.length ? `\nNo van: ${no.join(", ")}.` : "") + (none.length ? `\nSin responder: ${none.join(", ")}.` : "");
+  const { data: rs } = await sb.from("jornada_rsvps").select("player_id, going, post").eq("jornada_id", jornadaId);
+  const by = new Map((rs || []).map((r) => [r.player_id, r]));
+  const names = (f: (r: { going: boolean | null; post: boolean | null } | undefined) => boolean) => (players || []).filter((p) => f(by.get(p.id))).map((p) => p.name);
+  const yes = names((r) => r?.going === true), no = names((r) => r?.going === false), none = names((r) => r?.going == null);
+  const post = names((r) => r?.going === true && r?.post === true);
+  return `Van ${yes.length}: ${yes.join(", ") || "nadie"}.` + (no.length ? `\nNo van: ${no.join(", ")}.` : "") + (none.length ? `\nSin responder: ${none.join(", ")}.` : "") +
+    `\n🍻 Post-FIFA: ${post.length ? post.join(", ") : "nadie"}.`;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
