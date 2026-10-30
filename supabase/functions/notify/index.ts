@@ -75,7 +75,7 @@ async function rsvpSummary(jornadaId: string) {
   const yes = names((r) => r?.going === true), no = names((r) => r?.going === false), none = names((r) => r?.going == null);
   const post = names((r) => r?.going === true && r?.post === true);
   return `Van ${yes.length}: ${yes.join(", ") || "nadie"}.` + (no.length ? `\nNo van: ${no.join(", ")}.` : "") + (none.length ? `\nSin responder: ${none.join(", ")}.` : "") +
-    `\n🍻 Post-FIFA: ${post.length ? post.join(", ") : "nadie"}.`;
+    `\n🍻 Post-FIFA por ahora: ${post.length ? post.join(", ") : "nadie"}.`;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

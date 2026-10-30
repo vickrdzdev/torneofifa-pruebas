@@ -3948,11 +3948,16 @@
     }
   }
 
-  // ---- Confirmación de asistencia (antes del miércoles previo a la Jornada) ----
+  // ---- Confirmación de asistencia (antes del miércoles previo a la Jornada) y post-FIFA ----
   // Miércoles previo a la fecha de la Jornada, 11:59:59 pm (CDMX). Si cae en miércoles, el anterior.
   function rsvpDeadline(playDate) {
     if (!playDate) return null;
     return new Date(cdmxAt(playDate, -daysBackTo(playDate, 3), 23, 59) + 59 * 1000);
+  }
+  // El post-FIFA se puede contestar hasta el mismo día de la Jornada, 11:59:59 pm (CDMX).
+  function postDeadline(playDate) {
+    if (!playDate) return null;
+    return new Date(cdmxAt(playDate, 0, 23, 59) + 59 * 1000);
   }
   function rsvpOf(j, playerId) {
     const r = (j.rsvps || []).find(x => x.player_id === playerId);
@@ -3964,7 +3969,7 @@
   }
   // Tarjeta de respuesta Sí/No por player (asistencia a la Jornada o post-FIFA).
   function answerCardHtml(j, c) {
-    const dl = rsvpDeadline(j.playDate);
+    const dl = c.deadline;
     const open = !dl || Date.now() <= dl.getTime();
     const mine = state.players.filter(p => myPlayerIds.includes(p.id));
     const groups = { yes: [], no: [], none: [] };
@@ -4002,7 +4007,7 @@
     return answerCardHtml(j, {
       title: "🙋 ¿Vas a la " + escapeHtml(j.label) + "?", purpose: "la jornada", action: "rsvp-set",
       yesBtn: "Voy", noBtn: "No voy", yesShort: "Va", noShort: "No va", sumYes: "Van", sumNo: "No van",
-      get: pid => rsvpOf(j, pid), locked: () => false
+      get: pid => rsvpOf(j, pid), locked: () => false, deadline: rsvpDeadline(j.playDate)
     });
   }
   // Post-FIFA: lo que sigue después de la Jornada y el Fast Track. Quien no va a la
@@ -4012,13 +4017,13 @@
       title: "🍻 ¿Te quedas al post-FIFA?", purpose: "el post-FIFA", action: "post-set",
       yesBtn: "Me quedo", noBtn: "No me quedo", yesShort: "Se queda", noShort: "No se queda", sumYes: "Se quedan", sumNo: "No se quedan",
       get: pid => rsvpOf(j, pid) === false ? false : postOf(j, pid),
-      locked: pid => rsvpOf(j, pid) === false, lockedTxt: "No va a la jornada"
+      locked: pid => rsvpOf(j, pid) === false, lockedTxt: "No va a la jornada", deadline: postDeadline(j.playDate)
     });
   }
   async function setPost(jornadaId, playerId, post) {
     const j = state.jornadas.find(x => x.id === jornadaId);
-    if (!j || j.matches.length) return;
-    const dl = rsvpDeadline(j.playDate);
+    if (!j) return;
+    const dl = postDeadline(j.playDate);
     if (!isAdmin && (!myPlayerIds.includes(playerId) || (dl && Date.now() > dl.getTime()))) { showToast("Ya cerró la confirmación."); return; }
     const { error } = await sb.from("jornada_rsvps").upsert({ jornada_id: jornadaId, player_id: playerId, post }, { onConflict: "jornada_id,player_id" });
     if (error) { showToast(/cerr/i.test(error.message || "") ? "Ya cerró la confirmación." : "No se pudo guardar tu respuesta."); return; }
@@ -4120,7 +4125,12 @@
 
     let body = "";
     if (j.matches.length === 0) body = jornadaDateHtml(j) + rsvpCardHtml(j) + postCardHtml(j) + renderAttendanceStage(j);
-    else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
+    else {
+      // Con el calendario ya generado, el post-FIFA sigue abierto hasta el día de la Jornada.
+      const pdl = postDeadline(j.playDate);
+      const postOpen = pdl && Date.now() <= pdl.getTime();
+      body = jornadaDateHtml(j) + (postOpen ? postCardHtml(j) : "") + renderGroupStage(j) + renderPlayoff(j);
+    }
 
     const tabs = `
           ${state.jornadas.map(jj => {
