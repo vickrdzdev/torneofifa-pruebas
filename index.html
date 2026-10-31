@@ -4125,12 +4125,8 @@
 
     let body = "";
     if (j.matches.length === 0) body = jornadaDateHtml(j) + rsvpCardHtml(j) + postCardHtml(j) + renderAttendanceStage(j);
-    else {
-      // Con el calendario ya generado, el post-FIFA sigue abierto hasta el día de la Jornada.
-      const pdl = postDeadline(j.playDate);
-      const postOpen = pdl && Date.now() <= pdl.getTime();
-      body = jornadaDateHtml(j) + (postOpen ? postCardHtml(j) : "") + renderGroupStage(j) + renderPlayoff(j);
-    }
+    // Con el rol de juegos ya generado, la tarjeta del post-FIFA ya no se muestra.
+    else body = jornadaDateHtml(j) + renderGroupStage(j) + renderPlayoff(j);
 
     const tabs = `
           ${state.jornadas.map(jj => {
