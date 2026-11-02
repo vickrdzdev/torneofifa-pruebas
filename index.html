@@ -2012,7 +2012,12 @@
 
   // Cierre del Mercado: domingo 11:59 pm (centro de México, UTC-6) previo a la
   // fecha de la Jornada. Si la Jornada cae en domingo, es el domingo anterior.
-  function marketCloseAt(playDate) {
+  // Cierres excepcionales por Jornada (id de producción → instante de cierre).
+  const MARKET_CLOSE_OVERRIDES = {
+    "163768b1-849e-4ceb-b29e-77468aa201bb": "2026-11-04T05:59:59Z" // J2: martes 3 nov, 11:59 pm
+  };
+  function marketCloseAt(playDate, jornadaId) {
+    if (jornadaId && MARKET_CLOSE_OVERRIDES[jornadaId]) return new Date(MARKET_CLOSE_OVERRIDES[jornadaId]);
     if (!playDate) return null;
     const [y, m, d] = playDate.split("-").map(Number);
     const day = new Date(Date.UTC(y, m - 1, d));
@@ -2384,7 +2389,7 @@
     const lastJ = state.jornadas[last];
     const nextJ = state.jornadas[last + 1];
     if (!nextJ) return { phase: "closed", reason: "season" };
-    const closeAt = marketCloseAt(nextJ.playDate);
+    const closeAt = marketCloseAt(nextJ.playDate, nextJ.id);
     // Al cierre del Mercado, los turnos que falten del Draft se pierden.
     if (closeAt && Date.now() > closeAt.getTime()) return { phase: "closed", reason: "deadline", nextLabel: nextJ.label };
     if (last >= 1) {
@@ -3009,7 +3014,7 @@
     const prefix = "sched:" + j.id + ":";
     const rows = [];
     const nextJ = state.jornadas[last + 1];
-    const closeAt = nextJ ? marketCloseAt(nextJ.playDate) : null;
+    const closeAt = nextJ ? marketCloseAt(nextJ.playDate, nextJ.id) : null;
     const closeMs = closeAt ? closeAt.getTime() : Infinity;
     let cur = jornadaDraftSim(j).st;
     if (cur) {
@@ -3110,7 +3115,7 @@
           rows.push({ key: prefix + "con", kind: "console_reminder", jornadaId: j.id, at: cdmxAt(pd, -wedBack, 10), url: "./?m=torneo&j=" + encodeURIComponent(j.label),
             title: "🎮 Te toca llevar consola", body: "La " + j.label + " es el " + when + ". Actualiza los equipos de todos en tu consola." });
           // Domingo 5:00 pm: cierra el Mercado.
-          const close = marketCloseAt(pd);
+          const close = marketCloseAt(pd, j.id);
           if (close) rows.push({ key: prefix + "mkt", at: close.getTime() - (6 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=mercado",
             title: "⏰ El Mercado cierra hoy", body: "Cierra a las 11:59 pm, antes de la " + j.label + ". Aprovecha para comprar o vender." });
         }
@@ -4067,7 +4072,7 @@
     // La J0 se juega con los equipos estándar del FIFA: no hay Mercado antes
     // de ella, así que su fecha no define ningún cierre.
     const isJ0 = j.jornada_number === 0;
-    const close = isJ0 ? null : marketCloseAt(j.playDate);
+    const close = isJ0 ? null : marketCloseAt(j.playDate, j.id);
     const closeTxt = close ? ` · El Mercado cierra el ${escapeHtml(formatCloseAt(close))}` : "";
     const note = isJ0 ? "Se juega con los equipos estándar del FIFA (sin Mercado)."
       : closeTxt ? closeTxt.slice(3) : "Sin fecha: el Mercado no cierra antes de esta Jornada.";
