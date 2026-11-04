@@ -1,4 +1,5 @@
--- Desde la J2, el código de la alineación se sube como imagen (code_path) en lugar de texto.
+-- El código de la alineación se sube como imagen (code_path) en lugar de texto.
+-- Excepción: en el Torneo FC27 (producción y pruebas) la J1 se entregó con el código en texto.
 -- Correr una sola vez en el SQL Editor de Supabase (primero pruebas, luego producción).
 alter table public.lineups add column if not exists code_path text;
 
@@ -28,9 +29,10 @@ begin
     raise exception 'El plazo para cambiar la alineación ya cerró';
   end if;
 
-  -- J1: código en texto. Desde la J2: código en imagen.
-  complete := (case when jr.jornada_number >= 2 then new.code_path is not null
-                    else coalesce(btrim(new.code), '') <> '' end)
+  -- Código en imagen, salvo la J1 del Torneo FC27 (código en texto).
+  complete := (case when jr.jornada_number = 1 and jr.season_id in ('46f41d3f-0a28-4716-90bd-08948def700a', 'f96f2078-5c80-43ea-a0b4-e91750df4fe9')
+                    then coalesce(btrim(new.code), '') <> ''
+                    else new.code_path is not null end)
               and new.starters_path is not null and new.bench_path is not null;
 
   if admin and tg_op = 'UPDATE' and new.late is distinct from old.late then
@@ -51,7 +53,7 @@ begin
   return new;
 end $function$;
 
--- Desde la J2 ya no se usa el código en texto: se borra, y quien no tenga imagen del código
+-- En el Torneo FC27, desde la J2 ya no se usa el código en texto: se borra, y quien no tenga imagen del código
 -- queda con la alineación incompleta (tiene que subir la imagen).
 alter table public.lineups disable trigger lineups_guard;
 update public.lineups l set code = null,

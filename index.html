@@ -3713,10 +3713,13 @@
   function formatStamp(ts) {
     return new Date(ts).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
   }
-  // Desde la J2 el código de la alineación se sube como imagen (evita errores al teclearlo).
+  // El código de la alineación se sube como imagen (evita errores al teclearlo).
+  // Excepción: en el Torneo FC27 (producción y pruebas) la J1 se entregó con el código en texto.
   // En la base, lineups_guard aplica la misma regla.
+  const LINEUP_TEXT_CODE_J1_SEASONS = ["46f41d3f-0a28-4716-90bd-08948def700a", "f96f2078-5c80-43ea-a0b4-e91750df4fe9"];
   function lineupCodeIsImage(j) {
-    return !!j && j.jornada_number >= 2;
+    if (!j || j.jornada_number < 1) return false;
+    return !(j.jornada_number === 1 && LINEUP_TEXT_CODE_J1_SEASONS.includes(state.season && state.season.id));
   }
   function lineupImgUrl(path) {
     if (!path) return null;
