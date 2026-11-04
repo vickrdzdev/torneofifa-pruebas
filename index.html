@@ -485,6 +485,9 @@
   .lu-img figcaption { font-size: 12px; font-weight: 600; color: var(--text-muted); }
   .lu-img .frame { aspect-ratio: 4 / 3; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px; text-align: center; padding: 0; }
   .lu-img .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .lu-img.wide { grid-column: 1 / -1; }
+  .lu-img.wide .frame { aspect-ratio: 16 / 7; }
+  .lu-files.three { grid-template-columns: 1fr 1fr 1fr; }
   .lu-img .frame.pending-img { outline: 2px dashed var(--gold); outline-offset: -2px; }
   .lu-code { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
   .lu-code code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13.5px; }
@@ -1025,7 +1028,7 @@
     // Escudos e imágenes de alineaciones son privados: enlaces temporales de 12 h.
     const logoPaths = players.map(p => p.logo_path).filter(Boolean);
     const paths = [];
-    lineups.forEach(l => { if (l.starters_path) paths.push(l.starters_path); if (l.bench_path) paths.push(l.bench_path); });
+    lineups.forEach(l => { ["code_path", "starters_path", "bench_path"].forEach(k => { if (l[k]) paths.push(l[k]); }); });
     const signed = (bucket, list) => list.length
       ? Promise.resolve(sb.storage.from(bucket).createSignedUrls(list, 60 * 60 * 12)).then(r => (r && r.data) || [], () => [])
       : Promise.resolve([]);
@@ -3321,7 +3324,7 @@
     const l = lineupOf(j.id, playerId);
     if (l && l.submitted_at && !l.late) return null;
     if (l && l.submitted_at) return "la subió tarde";
-    if (l && (l.code || l.starters_path || l.bench_path)) return "la dejó incompleta";
+    if (l && (l.code || l.code_path || l.starters_path || l.bench_path)) return "la dejó incompleta";
     return "no la subió";
   }
   // Todas las faltas de la temporada, numeradas por player y tipo en orden de Jornada.
@@ -3710,6 +3713,11 @@
   function formatStamp(ts) {
     return new Date(ts).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
   }
+  // Desde la J2 el código de la alineación se sube como imagen (evita errores al teclearlo).
+  // En la base, lineups_guard aplica la misma regla.
+  function lineupCodeIsImage(j) {
+    return !!j && j.jornada_number >= 2;
+  }
   function lineupImgUrl(path) {
     if (!path) return null;
     return (state.lineupUrls || {})[path] || null;
@@ -3759,7 +3767,8 @@
     const key = j.id + ":" + p.id;
     const draft = luDrafts[key] || {};
     const complete = !!(l && l.submitted_at);
-    const partial = !!(l && !complete && (l.code || l.starters_path || l.bench_path));
+    const partial = !!(l && !complete && (l.code || l.code_path || l.starters_path || l.bench_path));
+    const codeImg = lineupCodeIsImage(j);
     let status;
     if (complete && l.late) status = `<span class="lu-status late">⏰ Entregada tarde</span>`;
     else if (complete) status = `<span class="lu-status ok">✅ Entregada</span>`;
@@ -3772,28 +3781,29 @@
     const locked = canEdit && !isAdmin && past && complete;
     const editing = canEdit && !locked;
 
-    const img = (kind, label) => {
+    const img = (kind, label, wide) => {
       const pend = draft[kind];
       const url = pend ? pend.url : lineupImgUrl(l && l[kind + "_path"]);
       const inner = url ? `<img src="${escapeHtml(url)}" alt="${label} de ${escapeHtml(p.name)}" loading="lazy">` : "Sin imagen";
       const frame = url && !pend
         ? `<a class="frame" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Ver en grande">${inner}</a>`
         : `<div class="frame ${pend ? "pending-img" : ""}">${inner}</div>`;
-      return `<figure class="lu-img"><figcaption>${label}${pend ? " · sin guardar" : ""}</figcaption>${frame}</figure>`;
+      return `<figure class="lu-img ${wide ? "wide" : ""}"><figcaption>${label}${pend ? " · sin guardar" : ""}</figcaption>${frame}</figure>`;
     };
-    const codeView = l && l.code
+    const codeView = !codeImg && l && l.code
       ? `<div class="lu-code"><code>${escapeHtml(l.code)}</code><button class="mini-btn" data-action="copy-lu-code" data-code="${escapeHtml(l.code)}">Copiar</button></div>`
       : "";
 
     let form = "";
     if (editing) {
       const saving = luSaving === key;
-      const codeVal = draft.code !== undefined ? draft.code : (l && l.code) || "";
-      const dirty = draft.code !== undefined || draft.starters || draft.bench;
+      const codeVal = draft.codeTxt !== undefined ? draft.codeTxt : (l && l.code) || "";
+      const dirty = draft.codeTxt !== undefined || draft.code || draft.starters || draft.bench;
       form = `
         <div class="lu-form">
-          <input class="text-input lu-code-input" id="lu-code-${p.id}" data-key="${key}" type="text" placeholder="Código de alineación" value="${escapeHtml(codeVal)}" autocomplete="off">
-          <div class="lu-files">
+          ${codeImg ? "" : `<input class="text-input lu-code-input" id="lu-code-${p.id}" data-key="${key}" type="text" placeholder="Código de alineación" value="${escapeHtml(codeVal)}" autocomplete="off">`}
+          <div class="lu-files ${codeImg ? "three" : ""}">
+            ${codeImg ? `<label class="btn-secondary lu-file">🔢 Código<input type="file" accept="image/*" data-lu-file="code" data-key="${key}"></label>` : ""}
             <label class="btn-secondary lu-file">🖼️ Titulares<input type="file" accept="image/*" data-lu-file="starters" data-key="${key}"></label>
             <label class="btn-secondary lu-file">🪑 Banca<input type="file" accept="image/*" data-lu-file="bench" data-key="${key}"></label>
           </div>
@@ -3809,7 +3819,7 @@
         <div class="lu-head"><h3>${escapeHtml(p.name)}${mine ? ` <span class="muted" style="font-size:13px; font-family:var(--font-body)">(tú)</span>` : ""}</h3>${status}</div>
         ${when}
         ${codeView}
-        <div class="lu-imgs">${img("starters", "Titulares")}${img("bench", "Banca")}</div>
+        <div class="lu-imgs">${codeImg ? img("code", "Código", true) : ""}${img("starters", "Titulares")}${img("bench", "Banca")}</div>
         ${form}
       </div>`;
   }
@@ -3849,31 +3859,33 @@
     const key = jornadaId + ":" + playerId;
     const d = luDrafts[key] || {};
     const l = lineupOf(jornadaId, playerId);
+    const codeImg = lineupCodeIsImage(state.jornadas.find(x => x.id === jornadaId));
     luSaving = key; render();
     try {
       const row = {
         season_id: state.season.id, jornada_id: jornadaId, player_id: playerId,
-        code: d.code !== undefined ? (d.code.trim() || null) : (l ? l.code : null),
+        code: codeImg ? null : d.codeTxt !== undefined ? (d.codeTxt.trim() || null) : (l ? l.code : null),
+        code_path: codeImg && l ? l.code_path || null : null,
         starters_path: l ? l.starters_path : null,
         bench_path: l ? l.bench_path : null
       };
-      for (const kind of ["starters", "bench"]) {
+      for (const kind of ["code", "starters", "bench"]) {
         if (!d[kind]) continue;
         const blob = await compressImage(d[kind].file);
         const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
         const path = `${state.season.id}/${jornadaId}/${playerId}/${kind}-${Date.now()}.${ext}`;
         const { error } = await sb.storage.from("lineups").upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: false });
-        if (error) throw new Error("No se pudo subir la imagen (" + (kind === "starters" ? "titulares" : "banca") + ").");
+        if (error) throw new Error("No se pudo subir la imagen (" + ({ code: "código", starters: "titulares", bench: "banca" })[kind] + ").");
         row[kind + "_path"] = path;
       }
       const { error } = await sb.from("lineups").upsert(row, { onConflict: "jornada_id,player_id" });
       if (error) throw new Error(/plazo/i.test(error.message || "") ? "El plazo ya cerró: tu alineación ya no se puede cambiar." : "No se pudo guardar la alineación.");
-      ["starters", "bench"].forEach(k => { if (d[k]) URL.revokeObjectURL(d[k].url); });
+      ["code", "starters", "bench"].forEach(k => { if (d[k]) URL.revokeObjectURL(d[k].url); });
       delete luDrafts[key];
       await loadSeasonData();
       const saved = lineupOf(jornadaId, playerId);
       const missing = [];
-      if (!row.code) missing.push("código");
+      if (codeImg ? !row.code_path : !row.code) missing.push("código");
       if (!row.starters_path) missing.push("titulares");
       if (!row.bench_path) missing.push("banca");
       luSaving = null;
@@ -4963,8 +4975,8 @@
     if (e.target.classList && e.target.classList.contains("lu-code-input")) {
       const key = e.target.dataset.key;
       const d = luDrafts[key] = luDrafts[key] || {};
-      const had = d.code !== undefined;
-      d.code = e.target.value;
+      const had = d.codeTxt !== undefined;
+      d.codeTxt = e.target.value;
       if (!had) { const btn = e.target.closest(".lu-form").querySelector("[data-action=save-lineup]"); if (btn && luSaving !== key) btn.disabled = false; }
       return;
     }
