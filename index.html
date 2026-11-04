@@ -3099,7 +3099,7 @@
         rows.push({ key: prefix + "rsvpsum", kind: "rsvp_summary", jornadaId: j.id, at: dlRsvp + 60 * 1000, url: "./?m=torneo&j=" + encodeURIComponent(j.label),
           title: "🙋 Asistencia de la " + j.label, body: "Cerró la confirmación." });
         if (j.jornada_number >= 1) {
-          const dl = lineupDeadline(pd).getTime();
+          const dl = lineupDeadline(pd, j.id).getTime();
           [18, 22].forEach(h => rows.push({ key: prefix + "lu" + h, kind: "lineup_reminder", jornadaId: j.id, at: dl - (24 - h) * 3600 * 1000, url: "./?m=alineaciones",
             title: "📋 Sube tu alineación", body: "Hoy a las 11:59 pm vence el plazo para la " + j.label + ". Te faltan código, titulares o banca." }));
           // Falta automática al vencer el plazo: aviso personal con la penalización que tocaría.
@@ -3339,7 +3339,7 @@
     const now = Date.now();
     state.jornadas.forEach(j => {
       if (j.jornada_number < 1) return;
-      const dl = lineupDeadline(j.playDate);
+      const dl = lineupDeadline(j.playDate, j.id);
       if (!dl || now < dl.getTime()) return;
       state.players.forEach(p => {
         // Quien faltó a la Jornada no juega, así que no se le exige alineación.
@@ -3691,7 +3691,13 @@
   // Límite para subir la alineación: martes 11:59 pm (CDMX, UTC-6) inmediatamente
   // anterior a la fecha de la Jornada. Devuelve el instante en que ya es tarde
   // (miércoles 00:00 CDMX). La misma regla vive en la base (lineup_deadline).
-  function lineupDeadline(playDate) {
+  // Plazos excepcionales por Jornada (id de producción → instante en que ya es tarde).
+  // En la base, lineup_deadline tiene la misma excepción.
+  const LINEUP_DEADLINE_OVERRIDES = {
+    "163768b1-849e-4ceb-b29e-77468aa201bb": "2026-11-05T06:00:00Z" // J2: miércoles 4 nov, 11:59 pm
+  };
+  function lineupDeadline(playDate, jornadaId) {
+    if (jornadaId && LINEUP_DEADLINE_OVERRIDES[jornadaId]) return new Date(LINEUP_DEADLINE_OVERRIDES[jornadaId]);
     if (!playDate) return null;
     const [y, m, d] = playDate.split("-").map(Number);
     const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -3728,7 +3734,7 @@
     if (luTab === "cuentas") return { tabs, body: renderAccounts() };
 
     const j = js.find(x => x.id === luTab);
-    const dl = lineupDeadline(j.playDate);
+    const dl = lineupDeadline(j.playDate, j.id);
     const past = dl && Date.now() >= dl.getTime();
     const banner = !dl
       ? `<div class="draft-banner muted">📅 La ${escapeHtml(j.label)} aún no tiene fecha: el límite para subir la alineación se fija cuando el admin la capture.</div>`
