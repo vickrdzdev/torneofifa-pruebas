@@ -485,11 +485,9 @@
   .lu-img figcaption { font-size: 12px; font-weight: 600; color: var(--text-muted); }
   .lu-img .frame { aspect-ratio: 4 / 3; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px; text-align: center; padding: 0; }
   .lu-img .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  /* Con código en imagen: titulares y banca grandes (una por renglón) y el código abajo, más chico. */
-  .lu-imgs.stack { grid-template-columns: 1fr; }
-  .lu-imgs.stack .lu-img .frame { aspect-ratio: 16 / 9; }
-  .lu-imgs.stack .lu-img.code { width: 60%; }
-  .lu-imgs.stack .lu-img.code .frame { aspect-ratio: 16 / 7; }
+  /* Código en imagen: abajo de titulares y banca, a lo ancho y con la altura de una línea de texto. */
+  .lu-img.code { grid-column: 1 / -1; }
+  .lu-img.code .frame { aspect-ratio: auto; height: 40px; }
   .lu-files.three { grid-template-columns: 1fr 1fr 1fr; }
   .lu-img .frame.pending-img { outline: 2px dashed var(--gold); outline-offset: -2px; }
   .lu-code { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
@@ -3825,7 +3823,7 @@
         <div class="lu-head"><h3>${escapeHtml(p.name)}${mine ? ` <span class="muted" style="font-size:13px; font-family:var(--font-body)">(tú)</span>` : ""}</h3>${status}</div>
         ${when}
         ${codeView}
-        <div class="lu-imgs ${codeImg ? "stack" : ""}">${img("starters", "Titulares")}${img("bench", "Banca")}${codeImg ? img("code", "Código", "code") : ""}</div>
+        <div class="lu-imgs">${img("starters", "Titulares")}${img("bench", "Banca")}${codeImg ? img("code", "Código", "code") : ""}</div>
         ${form}
       </div>`;
   }
