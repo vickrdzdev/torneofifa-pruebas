@@ -485,8 +485,11 @@
   .lu-img figcaption { font-size: 12px; font-weight: 600; color: var(--text-muted); }
   .lu-img .frame { aspect-ratio: 4 / 3; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12px; text-align: center; padding: 0; }
   .lu-img .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .lu-img.wide { grid-column: 1 / -1; }
-  .lu-img.wide .frame { aspect-ratio: 16 / 7; }
+  /* Con código en imagen: titulares y banca grandes (una por renglón) y el código abajo, más chico. */
+  .lu-imgs.stack { grid-template-columns: 1fr; }
+  .lu-imgs.stack .lu-img .frame { aspect-ratio: 16 / 9; }
+  .lu-imgs.stack .lu-img.code { width: 60%; }
+  .lu-imgs.stack .lu-img.code .frame { aspect-ratio: 16 / 7; }
   .lu-files.three { grid-template-columns: 1fr 1fr 1fr; }
   .lu-img .frame.pending-img { outline: 2px dashed var(--gold); outline-offset: -2px; }
   .lu-code { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
@@ -3784,14 +3787,14 @@
     const locked = canEdit && !isAdmin && past && complete;
     const editing = canEdit && !locked;
 
-    const img = (kind, label, wide) => {
+    const img = (kind, label, cls) => {
       const pend = draft[kind];
       const url = pend ? pend.url : lineupImgUrl(l && l[kind + "_path"]);
       const inner = url ? `<img src="${escapeHtml(url)}" alt="${label} de ${escapeHtml(p.name)}" loading="lazy">` : "Sin imagen";
       const frame = url && !pend
         ? `<a class="frame" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Ver en grande">${inner}</a>`
         : `<div class="frame ${pend ? "pending-img" : ""}">${inner}</div>`;
-      return `<figure class="lu-img ${wide ? "wide" : ""}"><figcaption>${label}${pend ? " · sin guardar" : ""}</figcaption>${frame}</figure>`;
+      return `<figure class="lu-img ${cls || ""}"><figcaption>${label}${pend ? " · sin guardar" : ""}</figcaption>${frame}</figure>`;
     };
     const codeView = !codeImg && l && l.code
       ? `<div class="lu-code"><code>${escapeHtml(l.code)}</code><button class="mini-btn" data-action="copy-lu-code" data-code="${escapeHtml(l.code)}">Copiar</button></div>`
@@ -3806,9 +3809,9 @@
         <div class="lu-form">
           ${codeImg ? "" : `<input class="text-input lu-code-input" id="lu-code-${p.id}" data-key="${key}" type="text" placeholder="Código de alineación" value="${escapeHtml(codeVal)}" autocomplete="off">`}
           <div class="lu-files ${codeImg ? "three" : ""}">
-            ${codeImg ? `<label class="btn-secondary lu-file">🔢 Código<input type="file" accept="image/*" data-lu-file="code" data-key="${key}"></label>` : ""}
             <label class="btn-secondary lu-file">🖼️ Titulares<input type="file" accept="image/*" data-lu-file="starters" data-key="${key}"></label>
             <label class="btn-secondary lu-file">🪑 Banca<input type="file" accept="image/*" data-lu-file="bench" data-key="${key}"></label>
+            ${codeImg ? `<label class="btn-secondary lu-file">🔢 Código<input type="file" accept="image/*" data-lu-file="code" data-key="${key}"></label>` : ""}
           </div>
           ${past && !complete && !isAdmin ? `<p class="lu-note warn">El plazo ya cerró: tu alineación quedará marcada como tarde.</p>` : ""}
           ${!past && complete && !isAdmin ? `<p class="lu-note">Puedes cambiarla hasta el martes a las 11:59 pm.</p>` : ""}
@@ -3822,7 +3825,7 @@
         <div class="lu-head"><h3>${escapeHtml(p.name)}${mine ? ` <span class="muted" style="font-size:13px; font-family:var(--font-body)">(tú)</span>` : ""}</h3>${status}</div>
         ${when}
         ${codeView}
-        <div class="lu-imgs">${codeImg ? img("code", "Código", true) : ""}${img("starters", "Titulares")}${img("bench", "Banca")}</div>
+        <div class="lu-imgs ${codeImg ? "stack" : ""}">${img("starters", "Titulares")}${img("bench", "Banca")}${codeImg ? img("code", "Código", "code") : ""}</div>
         ${form}
       </div>`;
   }
