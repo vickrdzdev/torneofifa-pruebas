@@ -5,6 +5,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+// En el proyecto de pruebas, los avisos llevan una marca para no confundirlos con los de producción.
+const IS_TEST = (Deno.env.get("SUPABASE_URL") || "").includes("bcvzgwnwjtcmtbhwruhi");
+const TEST_TAG = "🧪 PRUEBAS · ";
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -96,7 +99,7 @@ async function processDue(summary: string[]) {
     }
     const subs = await subsFor(await recipients(row));
     if (row.kind === "rsvp_summary" && row.jornada_id) row.body = await rsvpSummary(row.jornada_id);
-    const payload = JSON.stringify({ title: row.title, body: row.body, image: row.image, url: row.url || "./", tag: row.key });
+    const payload = JSON.stringify({ title: (IS_TEST ? TEST_TAG : "") + row.title, body: row.body, image: row.image, url: row.url || "./", tag: row.key });
     const results = await Promise.all(subs.map(async (s) => {
       const gap = 1000 - (Date.now() - (lastSent.get(s.endpoint) || 0));
       if (gap > 0) await sleep(gap);
