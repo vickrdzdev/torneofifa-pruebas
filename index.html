@@ -4422,13 +4422,18 @@
     return m;
   }
 
+  // ALT POS viene como "CDM, CAM" (a veces con "+1" al final: posiciones que no vienen en los datos).
+  function altPositions(m) {
+    if (m._alt === undefined) m._alt = String(m.altPos || "").split(",").map(x => x.trim()).filter(x => MARKET_POSITIONS.includes(x));
+    return m._alt;
+  }
   function filteredMarket() {
     const q = normalizeText(marketQuery.trim());
     const sold = soldMap();
     const cap = ratCap();
     const list = market.filter(m =>
       (!q || m.search.includes(q)) &&
-      (!marketPos || m.pos === marketPos) &&
+      (!marketPos || m.pos === marketPos || altPositions(m).includes(marketPos)) &&
       (!marketOnlyAvailable || (!sold[m.id] && m.rat <= cap)));
     if (!marketSort) return list;
     const col = MARKET_COLS.find(c => c.key === marketSort.key);
