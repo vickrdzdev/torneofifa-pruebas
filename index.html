@@ -647,10 +647,10 @@
   .dd-status { position: absolute; left: 16px; right: 64px; top: calc(18px + env(safe-area-inset-top, 0px)); font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--text); pointer-events: none; }
   .dd-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 18px; }
   .dd-dot { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%; border: 6px solid currentColor; background: color-mix(in srgb, currentColor 30%, transparent); pointer-events: none; transition: transform .35s ease, opacity .35s ease; }
-  .dd-dot.counting { animation: dd-pulse .6s ease-in-out infinite alternate; }
+  .dd-dot.counting { opacity: .45; transition: transform .12s ease, opacity .12s ease, background .12s ease; }
+  .dd-dot.counting.lit { opacity: 1; transform: scale(1.18); background: color-mix(in srgb, currentColor 80%, transparent); box-shadow: 0 0 28px 6px currentColor; }
   .dd-dot.win { transform: scale(1.7); box-shadow: 0 0 0 9999px color-mix(in srgb, currentColor 22%, transparent); }
   .dd-dot.lose { opacity: 0; transform: scale(.4); }
-  @keyframes dd-pulse { from { transform: scale(1); } to { transform: scale(1.18); } }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-display); font-size: 18px; }
 </style>
 </head>
@@ -4269,12 +4269,12 @@
   function dedulceIntroHtml() {
     return `<div class="card dd-intro">
         <div class="dd-hand">☝🏼</div>
-        <p>Todos pongan un dedo en la pantalla y no lo levanten. Cuando nadie se mueva por 2 segundos, la app elige a uno al azar.</p>
+        <p>Todos pongan un dedo en la pantalla y no lo levanten. Cuando nadie se mueva por 5 segundos, la app elige a uno al azar.</p>
         <button class="btn-primary" data-action="open-dedulce">Empezar</button>
       </div>`;
   }
   const DD_COLORS = ["#3ecb71", "#e7b75d", "#4ea1ff", "#ff5d73", "#b57bff", "#ff9f43", "#2dd4bf", "#f472b6", "#a3e635", "#f87171"];
-  const DD_WAIT_MS = 2000;
+  const DD_WAIT_MS = 5000;
   let dd = null;
   function openDedulce() {
     if (dd) return;
@@ -4282,7 +4282,7 @@
     layer.className = "dd-layer";
     layer.innerHTML = `<div class="dd-status"></div><button class="dd-close" aria-label="Cerrar">✕</button>`;
     document.body.appendChild(layer);
-    dd = { layer, status: layer.querySelector(".dd-status"), touches: new Map(), timer: null, done: false, nextColor: 0 };
+    dd = { layer, status: layer.querySelector(".dd-status"), touches: new Map(), timer: null, tick: null, flash: null, done: false, nextColor: 0 };
     const down = e => {
       if (e.target.closest(".dd-close")) return;
       e.preventDefault();
@@ -4321,12 +4321,36 @@
     const n = dd.touches.size;
     dd.status.textContent = txt || (n === 0 ? "Pongan un dedo en la pantalla ☝🏼" : n === 1 ? "Falta al menos otro dedo…" : n + " dedos · no se muevan…");
   }
+  function dedulceStop() {
+    clearTimeout(dd.timer); clearInterval(dd.tick); clearTimeout(dd.flash);
+    dd.touches.forEach(el => el.classList.remove("counting", "lit"));
+  }
   // Cada vez que alguien pone o quita un dedo, la cuenta empieza de nuevo.
+  // Mientras corre, los dedos se iluminan al azar, cada vez más lento (como ruleta).
   function dedulceRestart() {
-    clearTimeout(dd.timer);
-    dd.touches.forEach(el => el.classList.toggle("counting", dd.touches.size >= 2));
+    dedulceStop();
     dedulceStatus();
-    if (dd.touches.size >= 2) dd.timer = setTimeout(dedulcePick, DD_WAIT_MS);
+    if (dd.touches.size < 2) return;
+    const start = Date.now();
+    dd.touches.forEach(el => el.classList.add("counting"));
+    const countdown = () => {
+      const left = Math.ceil((DD_WAIT_MS - (Date.now() - start)) / 1000);
+      if (left > 0) dedulceStatus(dd.touches.size + " dedos · no se muevan… " + left);
+    };
+    countdown();
+    dd.tick = setInterval(countdown, 250);
+    let last = null;
+    const flash = () => {
+      const els = [...dd.touches.values()];
+      let el = els[Math.floor(Math.random() * els.length)];
+      if (el === last && els.length > 1) el = els[(els.indexOf(el) + 1) % els.length];
+      els.forEach(x => x.classList.toggle("lit", x === el));
+      last = el;
+      const t = (Date.now() - start) / DD_WAIT_MS;
+      dd.flash = setTimeout(flash, 90 + 260 * t * t);
+    };
+    flash();
+    dd.timer = setTimeout(dedulcePick, DD_WAIT_MS);
   }
   function dedulcePick() {
     const els = [...dd.touches.values()];
@@ -4335,7 +4359,8 @@
     crypto.getRandomValues(r);
     const win = els[r[0] % els.length];
     dd.done = true;
-    els.forEach(el => { el.classList.remove("counting"); el.classList.add(el === win ? "win" : "lose"); });
+    dedulceStop();
+    els.forEach(el => el.classList.add(el === win ? "win" : "lose"));
     if (navigator.vibrate) navigator.vibrate(200);
     dedulceStatus("¡Ese! 👆 Levanten los dedos para jugar otra vez.");
   }
@@ -4348,7 +4373,7 @@
   }
   function closeDedulce() {
     if (!dd) return;
-    clearTimeout(dd.timer);
+    dedulceStop();
     dd.layer.remove();
     dd = null;
   }
