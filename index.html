@@ -2912,6 +2912,8 @@
       exclude_player: Array.isArray(r.exclude) ? null : r.exclude || null,
       exclude_players: Array.isArray(r.exclude) ? r.exclude.filter(Boolean) : null,
       title: r.title, body: r.body || "", image: r.image || null, url: r.url || null,
+      // Compras y ventas también se publican en el grupo de WhatsApp (con la foto del jugador).
+      ...(r.whatsapp ? { whatsapp: true, wa_photo: r.waPhoto || null } : {}),
       send_at: new Date(r.at || base + i).toISOString(),
       ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
     }));
@@ -4712,8 +4714,9 @@
       const title = "💸 " + playerName(teamId) + " compró a " + m.name;
       const info = m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price);
       const actor = notifActor(teamId);
+      const wa = { whatsapp: true, waPhoto: cardImage(m.id) };
       if (before.phase !== "draft") {
-        await queueNotifs([{ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · Mercado abierto" }]);
+        await queueNotifs([{ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · Mercado abierto", ...wa }]);
         return;
       }
       // En el draft, la compra y el cambio de turno van en un solo aviso.
@@ -4721,19 +4724,19 @@
       const rows = [];
       if (after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
         const next = after.playerId;
-        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + "." });
+        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + ".", ...wa });
         // A quien compró desde su cuenta también se le confirma que terminó su turno.
         if (actor && next !== actor) rows.push({ key: key + ":done", url: "./?m=mercado", target: actor, title: "✅ Terminó tu turno",
           body: "Compraste a " + m.name + " (" + info + ").\n🔄 Comienza el turno de " + playerName(next) + "." });
         if (next !== actor) rows.push({ key: key + ":me", url: "./?m=mercado", target: next, title: "🔄 Comienza tu turno",
           body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes " + INITIAL_TURN_TXT + "." : " Tienes " + INITIAL_TURN_TXT + ".") : "") });
       } else if (after.phase === "open") {
-        rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres." });
+        rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres.", ...wa });
         if (actor) rows.push({ key: key + ":done", url: "./?m=mercado", target: actor, title: "✅ Terminó tu turno",
           body: "Compraste a " + m.name + " (" + info + ").\nTerminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado!" });
       } else {
         const more = after.phase === "draft" && after.playerId === teamId && after.pick === before.pick;
-        rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title + (more ? "\n🔁 Recupera un turno pendiente: le falta 1 selección." : "") });
+        rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title + (more ? "\n🔁 Recupera un turno pendiente: le falta 1 selección." : ""), ...wa });
       }
       await queueNotifs(rows);
       await syncDraftSchedule();
@@ -4787,7 +4790,8 @@
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
     await loadSeasonData(); render();
     if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", exclude: notifActor(pu.player_id),
-      title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado." }]);
+      title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado.",
+      whatsapp: true, waPhoto: cardImage(pu.card_id) }]);
   }
   async function undoPurchase(purchaseId) {
     if (!isAdmin) return;

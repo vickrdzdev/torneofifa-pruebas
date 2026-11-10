@@ -17,6 +17,7 @@ type Row = {
   id: string; key: string; kind: string; season_id: string | null; jornada_id: string | null;
   target_player: string | null; exclude_player: string | null; exclude_players: string[] | null;
   title: string; body: string; image: string | null; url: string | null; send_at: string;
+  whatsapp?: boolean; wa_photo?: string | null;
 };
 
 async function recipients(row: Row): Promise<string[] | "all"> {
@@ -81,12 +82,78 @@ async function rsvpSummary(jornadaId: string) {
     `\n🍻 Post-FIFA por ahora: ${post.length ? post.join(", ") : "nadie"}.`;
 }
 
+// ---- WhatsApp (Green-API): compras y ventas también se publican en el grupo ----
+// La librería de imágenes se carga solo al armar la foto: si fallara, las notificaciones siguen.
+// deno-lint-ignore no-explicit-any
+let IS: any = null;
+const imagescript = async () => IS || (IS = await import("https://deno.land/x/imagescript@1.3.0/mod.ts"));
+// Agranda con interpolación bilineal (la foto de Futbin mide 51 px; así no se ve en bloques).
+// deno-lint-ignore no-explicit-any
+function smoothScale(Image: any, img: any, w: number, h: number) {
+  const out = new Image(w, h), s = img.bitmap, d = out.bitmap, sw = img.width, sh = img.height;
+  for (let y = 0; y < h; y++) {
+    const fy = Math.max(0, (y + 0.5) * sh / h - 0.5), y0 = Math.floor(fy), y1 = Math.min(sh - 1, y0 + 1), ty = fy - y0;
+    for (let x = 0; x < w; x++) {
+      const fx = Math.max(0, (x + 0.5) * sw / w - 0.5), x0 = Math.floor(fx), x1 = Math.min(sw - 1, x0 + 1), tx = fx - x0;
+      for (let c = 0; c < 4; c++) {
+        const a = s[(y0 * sw + x0) * 4 + c], b = s[(y0 * sw + x1) * 4 + c], e = s[(y1 * sw + x0) * 4 + c], f = s[(y1 * sw + x1) * 4 + c];
+        d[(y * w + x) * 4 + c] = (a * (1 - tx) + b * tx) * (1 - ty) + (e * (1 - tx) + f * tx) * ty;
+      }
+    }
+  }
+  return out;
+}
+// Tarjeta ancha con la foto chica al centro, para que WhatsApp no la estire.
+async function photoCard(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("foto " + res.status);
+  const { decode, Image } = await imagescript();
+  const photo = await decode(new Uint8Array(await res.arrayBuffer()));
+  const W = 540, H = 270, S = 153;
+  const card = new Image(W, H).fill(Image.rgbaToColor(0x14, 0x28, 0x22, 255));
+  const ring = new Image(S + 24, S + 24).fill(Image.rgbaToColor(0x1d, 0x3a, 0x30, 255)).roundCorners(24);
+  card.composite(ring, (W - S - 24) / 2, (H - S - 24) / 2);
+  card.composite(smoothScale(Image, photo, S, S), (W - S) / 2, (H - S) / 2);
+  return await card.encode();
+}
+async function sendWhatsApp(sec: Record<string, string>, row: Row) {
+  const group = sec.whatsapp_group, api = sec.greenapi_url, id = sec.greenapi_instance, token = sec.greenapi_token;
+  if (!group || !api || !id || !token) return "";
+  const caption = (IS_TEST ? "🧪 PRUEBAS\n" : "") + "*" + row.title + "*" + (row.body ? "\n" + row.body : "");
+  let photoErr = "";
+  try {
+    if (row.wa_photo) {
+      try {
+        // La tarjeta se guarda en Storage (bucket privado "whatsapp") y Green-API la toma de una liga temporal.
+        const png = await photoCard(row.wa_photo);
+        const path = `${row.id}.png`;
+        const up = await sb.storage.from("whatsapp").upload(path, png, { contentType: "image/png", upsert: true });
+        if (up.error) throw new Error("storage " + up.error.message);
+        const { data: signed } = await sb.storage.from("whatsapp").createSignedUrl(path, 3600);
+        if (!signed) throw new Error("liga temporal");
+        const r = await fetch(`${api}/waInstance${id}/sendFileByUrl/${token}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: group, urlFile: signed.signedUrl, fileName: "jugador.png", caption }),
+        });
+        if (r.ok) return " · WA ok";
+        photoErr = "envío " + r.status;
+      } catch (e) { photoErr = String((e as Error).message || e).slice(0, 80); /* se manda solo el texto */ }
+    }
+    const r = await fetch(`${api}/waInstance${id}/sendMessage/${token}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: group, message: caption }),
+    });
+    return r.ok ? " · WA ok (texto" + (photoErr ? "; foto: " + photoErr : "") + ")" : " · WA error " + r.status;
+  } catch (e) {
+    return " · WA error";
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Envía los avisos que ya tocan. Los de un mismo lote salen en orden: si un
 // celular ya recibió uno hace menos de 1 s, el siguiente espera ese resto.
 const lastSent = new Map<string, number>();
-async function processDue(summary: string[]) {
+async function processDue(summary: string[], sec: Record<string, string>) {
   const { data: rows, error } = await sb.rpc("claim_due_notifications", { max_rows: 50 });
   if (error) throw new Error(error.message);
   const due = ((rows || []) as (Row & { created_at: string })[])
@@ -115,7 +182,8 @@ async function processDue(summary: string[]) {
       }
     }));
     const ok = results.filter(Boolean).length;
-    await sb.from("notifications").update({ result: `enviada a ${ok}/${subs.length}` }).eq("id", row.id);
+    const wa = row.whatsapp ? await sendWhatsApp(sec, row) : "";
+    await sb.from("notifications").update({ result: `enviada a ${ok}/${subs.length}${wa}` }).eq("id", row.id);
     summary.push(`${row.key}: ${ok}/${subs.length}`);
   }
 }
@@ -128,7 +196,7 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const summary: string[] = [];
   try {
-    await processDue(summary);
+    await processDue(summary, sec);
     // La llamada de cada minuto (pg_cron) se queda ~55 s esperando los avisos
     // programados de ese minuto (p. ej. turnos del Draft que se vencen) para
     // mandarlos en el segundo exacto.
@@ -140,7 +208,7 @@ Deno.serve(async (req) => {
         if (!nxt || !nxt.length) break;
         const wait = Date.parse(nxt[0].send_at) - Date.now();
         await sleep(Math.max(250, Math.min(wait, until - Date.now())));
-        await processDue(summary);
+        await processDue(summary, sec);
       }
     }
   } catch (e) {
