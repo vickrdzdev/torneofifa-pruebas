@@ -651,6 +651,7 @@
   .dd-dot.counting.lit { opacity: 1; transform: scale(1.18); background: color-mix(in srgb, currentColor 80%, transparent); box-shadow: 0 0 28px 6px currentColor; }
   .dd-dot.win { transform: scale(1.7); box-shadow: 0 0 0 9999px color-mix(in srgb, currentColor 22%, transparent); }
   .dd-dot.lose { opacity: 0; transform: scale(.4); }
+  .stale-banner { background: var(--surface-2); border: 1px solid var(--line); color: var(--text-muted); border-radius: 10px; padding: 9px 12px; font-size: 13px; margin-bottom: 14px; }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-display); font-size: 18px; }
 </style>
 </head>
@@ -1014,18 +1015,19 @@
   // Se incrementa con cada edición local; una recarga que empezó antes de una
   // edición se descarta para no pisar cambios que todavía no se guardan.
   let editGen = 0;
-  async function loadSeasonData() {
-    const gen = editGen;
-    const { data: seasons, error: e1 } = await sb.from("seasons").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(1);
-    if (e1) { showToast("No se pudo cargar la temporada."); state = null; return; }
-    if (!seasons || !seasons.length) { state = null; return; }
-    const season = seasons[0];
-
-    // Las consultas se piden en paralelo (con datos móviles, una tras otra
-    // tardaban varios segundos). Si una falla, el resto sigue.
-    const rows = q => Promise.resolve(q).then(r => (r && r.data) || [], () => []);
-    const sid = season.id;
-    const [players, jornadasRows, purchases, passes, lineups, draftStates, penalties, pushSubs] = await Promise.all([
+  // Carga del torneo en un solo viaje al servidor (función season_bundle: datos +
+  // rol de la sesión). Si la base todavía no la tiene, usa las consultas sueltas.
+  async function fetchBundle() {
+    const r = await Promise.resolve(sb.rpc("season_bundle")).then(x => x, () => ({ error: true }));
+    if (r && !r.error && r.data) return r.data;
+    const rows = q => Promise.resolve(q).then(x => (x && x.data) || [], () => []);
+    const { data: seasons, error } = await sb.from("seasons").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(1);
+    if (error) return null;
+    if (!seasons || !seasons.length) return { season: null };
+    const sid = seasons[0].id;
+    const [adm, accounts, players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs] = await Promise.all([
+      Promise.resolve(sb.rpc("is_admin")).then(x => !!(x && x.data === true), () => false),
+      rows(sb.from("player_accounts").select("*")),
       rows(sb.from("players").select("*").eq("season_id", sid).order("sort_order")),
       rows(sb.from("jornadas").select("*").eq("season_id", sid).order("jornada_number")),
       rows(sb.from("team_purchases").select("*").eq("season_id", sid).order("created_at")),
@@ -1033,33 +1035,39 @@
       rows(sb.from("lineups").select("*").eq("season_id", sid)),
       rows(sb.from("draft_states").select("*").eq("season_id", sid)),
       rows(sb.from("penalties").select("*").eq("season_id", sid).order("created_at")),
-      // Quién tiene notificaciones activas (solo lo puede leer un admin).
-      isAdmin ? rows(sb.from("push_subscriptions").select("email, created_at")) : Promise.resolve([])
+      rows(sb.from("push_subscriptions").select("email, created_at"))
     ]);
-    const jornadaIds = jornadasRows.map(j => j.id);
-
-    // Segunda tanda, también en paralelo: lo que depende de lo anterior.
-    // Escudos e imágenes de alineaciones son privados: enlaces temporales de 12 h.
-    const logoPaths = players.map(p => p.logo_path).filter(Boolean);
-    const paths = [];
-    lineups.forEach(l => { ["code_path", "starters_path", "bench_path"].forEach(k => { if (l[k]) paths.push(l[k]); }); });
-    const signed = (bucket, list) => list.length
-      ? Promise.resolve(sb.storage.from(bucket).createSignedUrls(list, 60 * 60 * 12)).then(r => (r && r.data) || [], () => [])
-      : Promise.resolve([]);
-    const [attendance, matches, logoSigned, lineupSigned, rsvps] = await Promise.all([
-      jornadaIds.length ? rows(sb.from("jornada_attendance").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([]),
-      jornadaIds.length ? rows(sb.from("matches").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([]),
-      signed("logos", logoPaths),
-      signed("lineups", paths),
-      jornadaIds.length ? rows(sb.from("jornada_rsvps").select("*").in("jornada_id", jornadaIds)) : Promise.resolve([])
-    ]);
-    const logoUrls = {}, lineupUrls = {};
-    logoSigned.forEach(x => { if (x && x.signedUrl) logoUrls[x.path] = x.signedUrl; });
-    lineupSigned.forEach(x => { if (x && x.signedUrl) lineupUrls[x.path] = x.signedUrl; });
-
-    const jornadas = (jornadasRows || []).map(jr => {
-      const activeIds = attendance.filter(a => a.jornada_id === jr.id).map(a => a.player_id);
-      const allM = matches.filter(m => m.jornada_id === jr.id);
+    const ids = jornadas.map(j => j.id);
+    const [attendance, matches, rsvps] = ids.length ? await Promise.all([
+      rows(sb.from("jornada_attendance").select("*").in("jornada_id", ids)),
+      rows(sb.from("matches").select("*").in("jornada_id", ids)),
+      rows(sb.from("jornada_rsvps").select("*").in("jornada_id", ids))
+    ]) : [[], [], []];
+    return { is_admin: adm, accounts, season: seasons[0], players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs, attendance, matches, rsvps };
+  }
+  // Rol de la sesión a partir de lo que trae la carga.
+  function applyRole(b) {
+    if (!hasSession) return;
+    isAdmin = b.is_admin === true;
+    playerAccounts = b.accounts || [];
+    myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
+  }
+  // Escudos e imágenes de alineaciones son privados: enlaces temporales de 12 h.
+  // Los que ya se firmaron se reusan mientras les quede más de 1 h.
+  let signedCache = {}; // "bucket/ruta" → { url, exp }
+  async function signPaths(bucket, list) {
+    const now = Date.now(), out = {}, need = [];
+    list.forEach(p => { const c = signedCache[bucket + "/" + p]; if (c && c.exp > now + 3600 * 1000) out[p] = c.url; else need.push(p); });
+    if (need.length) {
+      const res = await Promise.resolve(sb.storage.from(bucket).createSignedUrls(need, 60 * 60 * 12)).then(r => (r && r.data) || [], () => []);
+      res.forEach(x => { if (x && x.signedUrl) { out[x.path] = x.signedUrl; signedCache[bucket + "/" + x.path] = { url: x.signedUrl, exp: now + 12 * 3600 * 1000 }; } });
+    }
+    return out;
+  }
+  function buildState(b, logoUrls, lineupUrls) {
+    const jornadas = (b.jornadas || []).map(jr => {
+      const activeIds = (b.attendance || []).filter(a => a.jornada_id === jr.id).map(a => a.player_id);
+      const allM = (b.matches || []).filter(m => m.jornada_id === jr.id);
       const groupM = allM.filter(m => m.stage === "group").sort((a, b) => (a.round || 0) - (b.round || 0));
       const repM = allM.filter(m => m.stage === "repechaje");
       const semiM = allM.filter(m => m.stage === "semifinal");
@@ -1080,7 +1088,7 @@
         id: jr.id, jornada_number: jr.jornada_number, label: jr.label, playDate: jr.play_date || null,
         console1Id: jr.console1_id || null, console2Id: jr.console2_id || null,
         locationUrl: jr.location_url || null,
-        rsvps: rsvps.filter(r => r.jornada_id === jr.id),
+        rsvps: (b.rsvps || []).filter(r => r.jornada_id === jr.id),
         updatedAt: allM.reduce((mx, m) => (m.created_at && m.created_at > mx ? m.created_at : mx), ""),
         activeIds, matches: groupM.map(mapMatchRow), playoff
       };
@@ -1088,8 +1096,46 @@
       return jornada;
     });
 
+    return { season: b.season, players: b.players || [], jornadas, purchases: b.purchases || [], passes: b.passes || [], lineups: b.lineups || [],
+      lineupUrls, logoUrls, penalties: b.penalties || [], draftStates: b.draft_states || [], pushSubs: isAdmin ? (b.push_subs || []) : [] };
+  }
+  // Datos de la última vez, guardados en el celular: la app los muestra al abrir
+  // mientras llegan los nuevos (sin permitir cambios hasta tenerlos).
+  const cacheKey = () => "tf_cache:" + sessionEmail;
+  function saveCache(b) {
+    const now = Date.now(), sc = {};
+    Object.entries(signedCache).forEach(([k, v]) => { if (v.exp > now + 3600 * 1000) sc[k] = v; });
+    lsSet(cacheKey(), JSON.stringify({ v: 1, b, sc }));
+  }
+  function loadCachedState() {
+    let c = null;
+    try { c = JSON.parse(lsGet(cacheKey()) || "null"); } catch (e) { c = null; }
+    if (!c || c.v !== 1 || !c.b || !c.b.season) return false;
+    signedCache = Object.assign({}, c.sc || {}, signedCache);
+    const urls = bucket => Object.fromEntries(Object.entries(signedCache).filter(([k]) => k.startsWith(bucket + "/")).map(([k, v]) => [k.slice(bucket.length + 1), v.url]));
+    applyRole(c.b);
+    state = buildState(c.b, urls("logos"), urls("lineups"));
+    state.stale = true;
+    return true;
+  }
+  async function loadSeasonData() {
+    const gen = editGen;
+    let b = null;
+    try { b = await fetchBundle(); } catch (e) { b = null; }
+    if (!b) {
+      // Sin conexión: se quedan los datos que ya se ven.
+      if (state) { if (state.stale) state.offline = true; else showToast("No se pudieron actualizar los datos."); return; }
+      showToast("No se pudo cargar la temporada."); state = null; return;
+    }
+    if (!b.season) { state = null; return; }
+    applyRole(b);
+    const logoPaths = (b.players || []).map(p => p.logo_path).filter(Boolean);
+    const paths = [];
+    (b.lineups || []).forEach(l => { ["code_path", "starters_path", "bench_path"].forEach(k => { if (l[k]) paths.push(l[k]); }); });
+    const [logoUrls, lineupUrls] = await Promise.all([signPaths("logos", logoPaths), signPaths("lineups", paths)]);
     if (gen !== editGen) return;
-    state = { season, players: players || [], jornadas, purchases: purchases || [], passes, lineups, lineupUrls, logoUrls, penalties, draftStates, pushSubs };
+    state = buildState(b, logoUrls, lineupUrls);
+    saveCache(b);
     ensureDraftStarted();
   }
 
@@ -1338,6 +1384,7 @@
     myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
   }
   async function adminLogout() {
+    lsSet(cacheKey(), null); // los datos guardados de esta cuenta no se quedan en el celular
     await dropPushOnLogout();
     pushOn = false;
     await sb.auth.signOut();
@@ -1361,8 +1408,11 @@
     if (jt) activeTab = jt.label; // directo a la pestaña de la Jornada del día
   }
   async function startSession() {
-    loading = true; render();
+    // Si ya se ven los datos de la última vez, no se muestra la pantalla de carga.
+    if (!(state && state.stale)) { loading = true; render(); }
     await loadSeasonData();
+    if (state && state.stale) { loading = false; render(); return; } // sin conexión
+
     pickStartModule();
     loading = false;
     subscribeRealtime();
@@ -2774,7 +2824,7 @@
             </div>
             ${topTabs ? `<div class="tabs">${topTabs}</div>` : ""}
           </div>
-          <div class="wrap ${wide ? "wide" : ""}" style="padding-top:20px;">${pushBannerHtml()}${body}</div>
+          <div class="wrap ${wide ? "wide" : ""}" style="padding-top:20px;">${staleBannerHtml()}${pushBannerHtml()}${body}</div>
         </div>
       </div>
       ${helpModalHtml()}
@@ -2786,6 +2836,23 @@
       ${startInitialModalHtml()}
       ${toastMessage ? `<div class="toast">${escapeHtml(toastMessage).replace(/ϝ/g, FC_SYM)}</div>` : ""}
     `;
+  }
+
+  // Mientras se ven los datos de la última vez (llegando los nuevos o sin conexión).
+  function staleBannerHtml() {
+    if (!state || !state.stale) return "";
+    return `<div class="stale-banner">${state.offline
+      ? "📵 Sin conexión: estos son los datos de la última vez. No se pueden hacer cambios."
+      : "⏳ Actualizando… (por un momento ves los datos de la última vez)"}</div>`;
+  }
+  // Acciones que sí se permiten con datos de la última vez (solo navegar y ver).
+  const STALE_OK = new Set(["close-buy", "close-end-ft", "close-help", "close-login", "close-nav", "close-pass", "close-sell", "close-start-initial",
+    "copy-lu-code", "hide-push-banner", "market-page", "market-page-to", "market-sort", "open-dedulce", "open-help", "open-nav", "retry-market",
+    "set-lu-tab", "set-module", "set-stats-filter", "set-stats-tab", "set-tab", "set-team-tab", "admin-logout"]);
+  function staleBlocked() {
+    if (!state || !state.stale) return false;
+    showToast(state.offline ? "Sin conexión: no se pueden hacer cambios." : "Espera un momento: estoy actualizando los datos.");
+    return true;
   }
 
   /* ============================== notificaciones push ============================== */
@@ -4999,6 +5066,7 @@
     const el = e.target.closest("[data-action]");
     if (!el) return;
     const action = el.dataset.action;
+    if (!STALE_OK.has(action) && staleBlocked()) { if (el.type === "checkbox") render(); return; }
 
     switch (action) {
       case "pick-count": {
@@ -5091,6 +5159,7 @@
   });
 
   function submitGoal(el) {
+    if (staleBlocked()) return;
     el.dataset.sent = el.value;
     const action = el.dataset.action;
     if (action === "group-goal") setGroupGoal(el.dataset.j, el.dataset.match, el.dataset.side, el.value);
@@ -5136,6 +5205,10 @@
     marketSearchTimer = setTimeout(() => { marketPage = 0; refreshMarketResults(); }, 150);
   });
   document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset && (t.dataset.luFile || t.dataset.logoFile) || (t.classList && (t.classList.contains("console-select") || t.classList.contains("jdate-input") || t.classList.contains("magna-select")))) {
+      if (staleBlocked()) { render(); return; }
+    }
     if (e.target.dataset && e.target.dataset.luFile) { pickLineupFile(e.target); return; }
     if (e.target.dataset && e.target.dataset.logoFile) { uploadLogo(e.target); return; }
     if (e.target.classList && e.target.classList.contains("console-select")) { setJornadaConsole(e.target.dataset.j, e.target.dataset.col, e.target.value); return; }
@@ -5160,6 +5233,7 @@
   document.addEventListener("focusout", (e) => {
     const el = e.target;
     if (!el.classList || !el.classList.contains("score-box")) return;
+    if (state && state.stale) return;
     if (el.value !== el.defaultValue && el.dataset.sent !== el.value) submitGoal(el);
   });
 
@@ -5167,7 +5241,10 @@
   async function init() {
     render(); // loading screen
     const { data: { session } } = await sb.auth.getSession();
-    await refreshRole(session);
+    hasSession = !!session;
+    sessionEmail = session && session.user ? String(session.user.email || "").toLowerCase() : "";
+    // El rol llega junto con los datos (season_bundle); mientras, se usan los de la última vez.
+    if (session && loadCachedState()) { pickStartModule(); loading = false; render(); }
     sb.auth.onAuthStateChange((_event, newSession) => {
       const before = [isAdmin, hasSession, myPlayerIds.join()].join("|");
       // Fuera del callback: supabase-js no permite esperar otras llamadas aquí.

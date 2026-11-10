@@ -1,6 +1,7 @@
 // Service worker de Torneo FIFA: necesario para instalar la app en el celular.
-// · La página y el resto de la app: siempre primero de internet (así cada
-//   publicación se ve al instante); solo sin conexión usa la última copia.
+// · La página y el resto de la app: primero de internet (así cada publicación se
+//   ve al instante); si internet tarda más de 3 s o no hay conexión, usa la última
+//   copia (y la nueva se guarda para la siguiente vez).
 // · Lo que nunca cambia (librería con versión fija, catálogo de jugadores con
 //   número de versión, tipografías): se guarda en el celular y se lee de ahí.
 // No toca las llamadas a Supabase (los datos del torneo siempre se piden en vivo).
@@ -49,18 +50,30 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (isStatic(url)) { e.respondWith(fromStatic(req, url)); return; }
   if (url.origin !== self.location.origin) return;
-  e.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      })
-      .catch(() => caches.match(req).then((hit) => hit || (req.mode === "navigate" ? caches.match("index.html") : undefined)))
-  );
+  e.respondWith(networkFirst(req));
 });
+
+// Primero de internet; si tarda más de 3 s (señal débil) o no hay conexión, usa la
+// última copia guardada. La descarga sigue en segundo plano y actualiza la copia
+// para la siguiente vez que se abra.
+const NET_TIMEOUT_MS = 3000;
+function networkFirst(req) {
+  const cached = () => caches.match(req).then((hit) => hit || (req.mode === "navigate" ? caches.match("index.html") : undefined));
+  const net = fetch(req).then((res) => {
+    if (res.ok) {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy));
+    }
+    return res;
+  });
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (res) => { if (!done && res) { done = true; resolve(res); } };
+    const timer = setTimeout(() => cached().then(finish), NET_TIMEOUT_MS);
+    net.then((res) => { clearTimeout(timer); finish(res); })
+      .catch(() => { clearTimeout(timer); cached().then((hit) => (hit ? finish(hit) : (!done && reject(new Error("sin conexión"))))); });
+  });
+}
 
 // Notificaciones push: las manda la función "notify" de Supabase.
 self.addEventListener("push", (e) => {
