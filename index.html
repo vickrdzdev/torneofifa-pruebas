@@ -514,9 +514,14 @@
   .draft-turn strong { color: var(--accent); font-size: 16px; }
   .market-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
   .market-controls #market-search { flex: 1 1 260px; }
-  .pos-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 10px; }
-  .pos-chip { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 11px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
-  .pos-chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .pos-dd { position: relative; flex: 0 0 auto; }
+  .pos-dd > summary { list-style: none; cursor: pointer; padding-right: 30px; position: relative; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pos-dd > summary::-webkit-details-marker { display: none; }
+  .pos-dd > summary::after { content: "▾"; position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+  .pos-dd-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 210px; max-height: 60vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.3); padding: 6px; }
+  .pos-dd-opt { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  .pos-dd-opt:hover { background: var(--surface-2); }
+  .pos-dd-opt input { width: 18px; height: 18px; accent-color: var(--accent); }
   .check-inline { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); white-space: nowrap; }
   .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 10px 0; font-size: 14px; }
   .pager-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -2871,7 +2876,7 @@
   }
   // Acciones que sí se permiten con datos de la última vez (solo navegar y ver).
   const STALE_OK = new Set(["close-buy", "close-end-ft", "close-help", "close-login", "close-nav", "close-pass", "close-sell", "close-start-initial",
-    "copy-lu-code", "hide-push-banner", "market-page", "market-page-to", "market-sort", "market-pos", "open-dedulce", "open-help", "open-nav", "retry-market",
+    "copy-lu-code", "hide-push-banner", "market-page", "market-page-to", "market-sort", "open-dedulce", "open-help", "open-nav", "retry-market",
     "set-lu-tab", "set-module", "set-stats-filter", "set-stats-tab", "set-tab", "set-team-tab", "admin-logout"]);
   function staleBlocked() {
     if (!state || !state.stale) return false;
@@ -4847,23 +4852,30 @@
         ${draftBannerHtml()}
         <div class="market-controls">
           <input class="text-input" id="market-search" type="search" placeholder="Buscar jugador por nombre…" value="${escapeHtml(marketQuery)}" autocomplete="off">
+          <details class="pos-dd">
+            <summary class="text-input">${escapeHtml(posLabel())}</summary>
+            <div class="pos-dd-panel">${posChecksHtml()}</div>
+          </details>
           <label class="check-inline"><input type="checkbox" id="market-available" ${marketOnlyAvailable ? "checked" : ""}> Solo disponibles</label>
         </div>
-        <div class="pos-chips" role="group" aria-label="Filtrar por posición">${posChipsHtml()}</div>
         <p class="qual-note" style="margin:0 0 4px;">🔓 ${escapeHtml(unlockNote())}</p>
         <div id="market-results">${marketResultsHtml()}</div>
       </div>`;
   }
-  // Filtro de posiciones: se pueden elegir varias (cuenta POS o ALT POS).
-  function posChipsHtml() {
-    return `<button class="pos-chip ${marketPos.length ? "" : "on"}" data-action="market-pos" data-pos="" aria-pressed="${!marketPos.length}">Todas</button>`
-      + MARKET_POSITIONS.map(p => `<button class="pos-chip ${marketPos.includes(p) ? "on" : ""}" data-action="market-pos" data-pos="${p}" aria-pressed="${marketPos.includes(p)}">${p}</button>`).join("");
+  // Filtro de posiciones: lista con casillas, se pueden marcar varias (cuenta POS o ALT POS).
+  function posLabel() {
+    return marketPos.length ? MARKET_POSITIONS.filter(p => marketPos.includes(p)).join(", ") : "Todas las posiciones";
   }
-  function toggleMarketPos(pos) {
-    marketPos = !pos ? [] : marketPos.includes(pos) ? marketPos.filter(x => x !== pos) : marketPos.concat(pos);
+  function posChecksHtml() {
+    return `<label class="pos-dd-opt"><input type="checkbox" class="pos-cb" data-pos="" ${marketPos.length ? "" : "checked"}> Todas las posiciones</label>`
+      + MARKET_POSITIONS.map(p => `<label class="pos-dd-opt"><input type="checkbox" class="pos-cb" data-pos="${p}" ${marketPos.includes(p) ? "checked" : ""}> ${p}</label>`).join("");
+  }
+  function toggleMarketPos(pos, on) {
+    marketPos = !pos ? [] : on ? MARKET_POSITIONS.filter(p => p === pos || marketPos.includes(p)) : marketPos.filter(x => x !== pos);
     marketPage = 0;
-    const el = $(".pos-chips");
-    if (el) el.innerHTML = posChipsHtml();
+    // Se actualiza en su lugar para que la lista siga abierta.
+    const dd = $(".pos-dd");
+    if (dd) { dd.querySelector("summary").textContent = posLabel(); dd.querySelector(".pos-dd-panel").innerHTML = posChecksHtml(); }
     refreshMarketResults();
   }
   function refreshMarketResults() {
@@ -5093,6 +5105,9 @@
   }
 
   document.addEventListener("click", (e) => {
+    // La lista de posiciones se cierra al tocar fuera de ella.
+    const dd = document.querySelector(".pos-dd[open]");
+    if (dd && !dd.contains(e.target)) dd.removeAttribute("open");
     const overlay = e.target.closest(".modal-overlay");
     if (overlay && !e.target.closest("[data-stop-close]")) { helpOpen = false; loginOpen = false; buyCardId = null; buyTeamId = null; sellId = null; passOpen = false; endFtOpen = false; startInitialOpen = false; render(); return; }
 
@@ -5136,7 +5151,6 @@
       case "open-nav": navOpen = true; render(); break;
       case "close-nav": navOpen = false; render(); break;
       case "market-sort": setMarketSort(el.dataset.key); break;
-      case "market-pos": toggleMarketPos(el.dataset.pos); break;
       case "set-team-tab": teamsTab = el.dataset.team; render(); break;
       case "market-page": marketPage += parseInt(el.dataset.dir, 10); refreshMarketResults(); break;
       case "market-page-to": marketPage = el.dataset.page === "first" ? 0 : Number.MAX_SAFE_INTEGER; refreshMarketResults(); break;
@@ -5240,6 +5254,7 @@
   });
   document.addEventListener("change", (e) => {
     const t = e.target;
+    if (t.classList && t.classList.contains("pos-cb")) { toggleMarketPos(t.dataset.pos, t.checked); return; }
     if (t.dataset && (t.dataset.luFile || t.dataset.logoFile) || (t.classList && (t.classList.contains("console-select") || t.classList.contains("jdate-input") || t.classList.contains("magna-select")))) {
       if (staleBlocked()) { render(); return; }
     }
