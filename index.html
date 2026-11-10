@@ -2928,8 +2928,9 @@
       exclude_player: Array.isArray(r.exclude) ? null : r.exclude || null,
       exclude_players: Array.isArray(r.exclude) ? r.exclude.filter(Boolean) : null,
       title: r.title, body: r.body || "", image: r.image || null, url: r.url || null,
-      // Compras y ventas también se publican en el grupo de WhatsApp (con la foto del jugador).
-      ...(r.whatsapp ? { whatsapp: true, wa_photo: r.waPhoto || null } : {}),
+      // Compras, ventas y turnos también se publican en el grupo de WhatsApp (con la foto del jugador).
+      // Todas las filas llevan las dos columnas: en un lote, una columna que falta se guarda vacía.
+      whatsapp: !!r.whatsapp, wa_photo: (r.whatsapp && r.waPhoto) || null,
       send_at: new Date(r.at || base + i).toISOString(),
       ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
     }));
