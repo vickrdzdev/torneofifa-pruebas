@@ -638,6 +638,19 @@
   .login-card { max-width: 420px; margin: 24px auto 40px; position: relative; }
   .login-card .name-row { margin-bottom: 10px; }
   .login-card .login-err { color: var(--red); font-size: 13px; margin: 0 0 10px; }
+  /* Dedulce: todos ponen un dedo y la app elige a uno al azar. */
+  .dd-intro { text-align: center; padding: 28px 20px; }
+  .dd-intro .dd-hand { font-size: 64px; line-height: 1; margin-bottom: 12px; }
+  .dd-intro p { color: var(--text-muted); font-size: 14.5px; line-height: 1.6; margin: 0 auto 18px; max-width: 420px; }
+  .dd-intro .btn-primary { font-size: 17px; padding: 14px 28px; }
+  .dd-layer { position: fixed; inset: 0; z-index: 200; background: var(--bg); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; overflow: hidden; }
+  .dd-status { position: absolute; left: 16px; right: 64px; top: calc(18px + env(safe-area-inset-top, 0px)); font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--text); pointer-events: none; }
+  .dd-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 18px; }
+  .dd-dot { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%; border: 6px solid currentColor; background: color-mix(in srgb, currentColor 30%, transparent); pointer-events: none; transition: transform .35s ease, opacity .35s ease; }
+  .dd-dot.counting { animation: dd-pulse .6s ease-in-out infinite alternate; }
+  .dd-dot.win { transform: scale(1.7); box-shadow: 0 0 0 9999px color-mix(in srgb, currentColor 22%, transparent); }
+  .dd-dot.lose { opacity: 0; transform: scale(.4); }
+  @keyframes dd-pulse { from { transform: scale(1); } to { transform: scale(1.18); } }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-display); font-size: 18px; }
 </style>
 </head>
@@ -2710,6 +2723,7 @@
     { id: "estadisticas", icon: "📊", label: "Estadísticas" },
     { id: "penalizaciones", icon: "🚨", label: "Penalizaciones" },
     { id: "premios", icon: "💰", label: "Premios" },
+    { id: "dedulce", icon: "☝🏼", label: "Dedulce" },
     { id: "notificaciones", icon: "🔔", label: "Notificaciones", admin: true }
   ];
   // Módulos que ve la sesión (los marcados admin solo los ven los admins).
@@ -2734,6 +2748,8 @@
       ({ tabs: topTabs, body } = renderLineupsModule());
     } else if (activeModule === "notificaciones") {
       body = pushStatusHtml();
+    } else if (activeModule === "dedulce") {
+      body = dedulceIntroHtml();
     } else {
       ({ tabs: topTabs, body } = renderTournamentModule());
     }
@@ -4246,6 +4262,97 @@
     if (old) { try { await sb.storage.from("logos").remove([old]); } catch (e) {} }
     await loadSeasonData(); render();
   }
+  /* ============================== módulo: dedulce ============================== */
+  // Todos ponen un dedo en la pantalla; cuando nadie se mueve por unos segundos,
+  // la app elige a uno al azar (p. ej. quién pone su control). Corre en una capa
+  // aparte de #app para que los redibujados de la app no lo interrumpan.
+  function dedulceIntroHtml() {
+    return `<div class="card dd-intro">
+        <div class="dd-hand">☝🏼</div>
+        <p>Todos pongan un dedo en la pantalla y no lo levanten. Cuando nadie se mueva por 2 segundos, la app elige a uno al azar.</p>
+        <button class="btn-primary" data-action="open-dedulce">Empezar</button>
+      </div>`;
+  }
+  const DD_COLORS = ["#3ecb71", "#e7b75d", "#4ea1ff", "#ff5d73", "#b57bff", "#ff9f43", "#2dd4bf", "#f472b6", "#a3e635", "#f87171"];
+  const DD_WAIT_MS = 2000;
+  let dd = null;
+  function openDedulce() {
+    if (dd) return;
+    const layer = document.createElement("div");
+    layer.className = "dd-layer";
+    layer.innerHTML = `<div class="dd-status"></div><button class="dd-close" aria-label="Cerrar">✕</button>`;
+    document.body.appendChild(layer);
+    dd = { layer, status: layer.querySelector(".dd-status"), touches: new Map(), timer: null, done: false, nextColor: 0 };
+    const down = e => {
+      if (e.target.closest(".dd-close")) return;
+      e.preventDefault();
+      if (dd.done) return;
+      const el = document.createElement("div");
+      el.className = "dd-dot";
+      el.style.color = DD_COLORS[dd.nextColor++ % DD_COLORS.length];
+      layer.appendChild(el);
+      dd.touches.set(e.pointerId, el);
+      moveDot(el, e);
+      dedulceRestart();
+    };
+    const move = e => { const el = dd.touches.get(e.pointerId); if (el && !dd.done) moveDot(el, e); };
+    const up = e => {
+      const el = dd.touches.get(e.pointerId);
+      if (!el) return;
+      dd.touches.delete(e.pointerId);
+      if (dd.done) {
+        // Al levantar todos los dedos, se puede volver a jugar.
+        if (!dd.touches.size) dedulceReset();
+        return;
+      }
+      el.remove();
+      dedulceRestart();
+    };
+    layer.addEventListener("pointerdown", down);
+    layer.addEventListener("pointermove", move);
+    layer.addEventListener("pointerup", up);
+    layer.addEventListener("pointercancel", up);
+    layer.addEventListener("contextmenu", e => e.preventDefault());
+    layer.querySelector(".dd-close").addEventListener("click", closeDedulce);
+    dedulceStatus();
+  }
+  function moveDot(el, e) { el.style.left = e.clientX + "px"; el.style.top = e.clientY + "px"; }
+  function dedulceStatus(txt) {
+    const n = dd.touches.size;
+    dd.status.textContent = txt || (n === 0 ? "Pongan un dedo en la pantalla ☝🏼" : n === 1 ? "Falta al menos otro dedo…" : n + " dedos · no se muevan…");
+  }
+  // Cada vez que alguien pone o quita un dedo, la cuenta empieza de nuevo.
+  function dedulceRestart() {
+    clearTimeout(dd.timer);
+    dd.touches.forEach(el => el.classList.toggle("counting", dd.touches.size >= 2));
+    dedulceStatus();
+    if (dd.touches.size >= 2) dd.timer = setTimeout(dedulcePick, DD_WAIT_MS);
+  }
+  function dedulcePick() {
+    const els = [...dd.touches.values()];
+    if (els.length < 2) return;
+    const r = new Uint32Array(1);
+    crypto.getRandomValues(r);
+    const win = els[r[0] % els.length];
+    dd.done = true;
+    els.forEach(el => { el.classList.remove("counting"); el.classList.add(el === win ? "win" : "lose"); });
+    if (navigator.vibrate) navigator.vibrate(200);
+    dedulceStatus("¡Ese! 👆 Levanten los dedos para jugar otra vez.");
+  }
+  function dedulceReset() {
+    dd.layer.querySelectorAll(".dd-dot").forEach(el => el.remove());
+    dd.touches.clear();
+    dd.done = false;
+    dd.nextColor = 0;
+    dedulceStatus();
+  }
+  function closeDedulce() {
+    if (!dd) return;
+    clearTimeout(dd.timer);
+    dd.layer.remove();
+    dd = null;
+  }
+
   // Módulo Notificaciones (solo admins): quién tiene notificaciones activas y desde cuándo.
   function pushStatusHtml() {
     const subs = state.pushSubs || [];
@@ -4945,6 +5052,7 @@
       case "set-lu-tab": luTab = el.dataset.tab; render(); break;
       case "save-lineup": saveLineup(el.dataset.j, el.dataset.p); break;
       case "copy-lu-code": copyLineupCode(el.dataset.code); break;
+      case "open-dedulce": openDedulce(); break;
       case "save-account": saveAccount(el.dataset.p); break;
     }
   });
