@@ -677,7 +677,26 @@
   const SUPABASE_KEY = IS_TEST_ENV
     ? "sb_publishable_9wJ9d3Z2o1VM6H0RgQcSaw_9h78D3bJ"
     : "sb_publishable_dlamj0bnGrk7VTYLZNARVQ_XfVNCAq8";
-  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // Con datos móviles una conexión puede quedarse colgada más de un minuto sin
+  // responder ni fallar: ninguna llamada espera más de 15 s (subir imágenes, 2 min).
+  function fetchWithTimeout(input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
+    const ms = /\/storage\/v1\/object\//.test(url) && method !== "GET" ? 120000 : 15000;
+    const ctrl = new AbortController();
+    if (init && init.signal) init.signal.addEventListener("abort", () => ctrl.abort());
+    const t = setTimeout(() => ctrl.abort(), ms);
+    return fetch(input, Object.assign({}, init, { signal: ctrl.signal })).finally(() => clearTimeout(t));
+  }
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: fetchWithTimeout } });
+  // Correo de la sesión guardada en el celular, sin esperar a internet.
+  function storedSessionEmail() {
+    try {
+      const ref = new URL(SUPABASE_URL).hostname.split(".")[0];
+      const j = JSON.parse(localStorage.getItem("sb-" + ref + "-auth-token") || "null");
+      return j && j.user && j.user.email ? String(j.user.email).toLowerCase() : "";
+    } catch (e) { return ""; }
+  }
   if (IS_TEST_ENV) {
     document.body.classList.add("test-env");
     document.title = "[PRUEBAS] " + document.title;
@@ -1018,8 +1037,11 @@
   // Carga del torneo en un solo viaje al servidor (función season_bundle: datos +
   // rol de la sesión). Si la base todavía no la tiene, usa las consultas sueltas.
   async function fetchBundle() {
-    const r = await Promise.resolve(sb.rpc("season_bundle")).then(x => x, () => ({ error: true }));
+    const r = await Promise.resolve(sb.rpc("season_bundle")).then(x => x, () => ({ error: { message: "red" } }));
     if (r && !r.error && r.data) return r.data;
+    // Solo si la base no tiene la función se usan las consultas sueltas; si fue la red, no se insiste.
+    const missing = r && r.error && (r.error.code === "PGRST202" || /season_bundle/.test(r.error.message || ""));
+    if (!missing) return null;
     const rows = q => Promise.resolve(q).then(x => (x && x.data) || [], () => []);
     const { data: seasons, error } = await sb.from("seasons").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(1);
     if (error) return null;
@@ -5240,23 +5262,45 @@
   /* ============================== init ============================== */
   async function init() {
     render(); // loading screen
-    const { data: { session } } = await sb.auth.getSession();
-    hasSession = !!session;
-    sessionEmail = session && session.user ? String(session.user.email || "").toLowerCase() : "";
-    // El rol llega junto con los datos (season_bundle); mientras, se usan los de la última vez.
-    if (session && loadCachedState()) { pickStartModule(); loading = false; render(); }
+    // Datos de la última vez al instante, con la sesión guardada en el celular
+    // (antes de renovarla con el servidor, que con mala señal puede tardar).
+    const storedEmail = storedSessionEmail();
+    if (storedEmail) {
+      hasSession = true; sessionEmail = storedEmail;
+      if (loadCachedState()) { pickStartModule(); loading = false; render(); }
+    }
     sb.auth.onAuthStateChange((_event, newSession) => {
       const before = [isAdmin, hasSession, myPlayerIds.join()].join("|");
       // Fuera del callback: supabase-js no permite esperar otras llamadas aquí.
       setTimeout(() => {
         const had = hasSession;
-        if (!newSession) { if (had) endSession(); return; }
+        if (!newSession) { if (had && !(state && state.offline)) endSession(); return; }
+        // Volvió la conexión y se renovó la sesión: ahora sí se cargan los datos nuevos.
+        if (state && state.offline) {
+          state.offline = false;
+          sessionEmail = String(newSession.user && newSession.user.email || "").toLowerCase();
+          startSession(); return;
+        }
         refreshRole(newSession).then(() => {
           if (!had && !loading) { startSession(); return; } // sesión iniciada en otra pestaña
           if (!loading && before !== [isAdmin, hasSession, myPlayerIds.join()].join("|")) render();
         });
       }, 0);
     });
+    // Si renovar la sesión tarda más de 20 s, se toma como sin conexión.
+    const { data: { session }, error: sessErr } = await Promise.race([
+      Promise.resolve(sb.auth.getSession()).then(x => x, e => ({ data: { session: null }, error: e || true })),
+      new Promise(res => setTimeout(() => res({ data: { session: null }, error: "tiempo" }), 20000))
+    ]);
+    if (!session && sessErr && storedEmail && state && state.stale) {
+      // No se pudo renovar la sesión por falta de conexión: se quedan los datos de la última vez.
+      state.offline = true; render();
+      return;
+    }
+    hasSession = !!session;
+    sessionEmail = session && session.user ? String(session.user.email || "").toLowerCase() : "";
+    if (!session && state) { state = null; loading = false; }
+    if (session && !state && loadCachedState()) { pickStartModule(); loading = false; render(); }
     if (hasSession) await startSession();
     else { loading = false; render(); }
   }
