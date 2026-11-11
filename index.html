@@ -4042,9 +4042,12 @@
         </div>
         <div class="pitch">
           <svg class="pitch-lines" viewBox="0 0 68 80" preserveAspectRatio="none" aria-hidden="true">
-            <rect x="1" y="1" width="66" height="78" fill="none"/><line x1="1" y1="1" x2="67" y2="1"/>
-            <circle cx="34" cy="1" r="9" fill="none"/><rect x="14" y="62" width="40" height="17" fill="none"/><rect x="25" y="73" width="18" height="6" fill="none"/>
+            <rect x="1" y="1" width="66" height="78" fill="none"/>
+            <line x1="1" y1="40" x2="67" y2="40"/><circle cx="34" cy="40" r="9.15" fill="none"/>
             <rect x="14" y="1" width="40" height="17" fill="none"/><rect x="25" y="1" width="18" height="6" fill="none"/>
+            <path d="M27.09 18 A9.15 9.15 0 0 0 40.91 18" fill="none"/>
+            <rect x="14" y="62" width="40" height="17" fill="none"/><rect x="25" y="73" width="18" height="6" fill="none"/>
+            <path d="M27.09 62 A9.15 9.15 0 0 1 40.91 62" fill="none"/>
           </svg>
           ${fm.slots.map((s, i) => fmSlotHtml(p, cards[st.slots[i]], s.p, i, "slot", editable, s.x, s.y)).join("")}
         </div>
