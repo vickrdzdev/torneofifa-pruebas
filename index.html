@@ -492,7 +492,7 @@
   .fm-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .fm-select { flex: 0 1 180px; }
   .fm-name-tag { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
-  .pitch { position: relative; aspect-ratio: 68 / 80; border-radius: 12px; overflow: hidden;
+  .pitch { position: relative; aspect-ratio: 68 / 100; border-radius: 12px; overflow: hidden;
     background: repeating-linear-gradient(180deg, #1f7a3d 0 10%, #1b6d36 10% 20%); }
   .pitch-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
   .pitch-lines * { stroke: rgba(255,255,255,.35); stroke-width: .5; }
@@ -3922,9 +3922,9 @@
   }
   // Formaciones del juego (las de FC 25/26). Cada lugar: posición y coordenadas en la
   // cancha (x: 0 izquierda → 100 derecha; y: 0 portería rival → 100 portería propia).
-  const FM_BACK4 = [["LB", 12, 67], ["CB", 37, 71], ["CB", 63, 71], ["RB", 88, 67]];
-  const FM_BACK3 = [["CB", 24, 71], ["CB", 50, 72], ["CB", 76, 71]];
-  const FM_BACK5 = [["LB", 8, 61], ["CB", 29, 71], ["CB", 50, 72], ["CB", 71, 71], ["RB", 92, 61]];
+  const FM_BACK4 = [["LB", 12, 74], ["CB", 37, 78], ["CB", 63, 78], ["RB", 88, 74]];
+  const FM_BACK3 = [["CB", 24, 77], ["CB", 50, 78], ["CB", 76, 77]];
+  const FM_BACK5 = [["LB", 8, 69], ["CB", 29, 78], ["CB", 50, 79], ["CB", 71, 78], ["RB", 92, 69]];
   const FM_ST2 = [["ST", 36, 15], ["ST", 64, 15]];
   const FM_FRONT3 = [["LW", 14, 20], ["ST", 50, 13], ["RW", 86, 20]];
   const FM_MID4 = [["LM", 10, 45], ["CM", 37, 50], ["CM", 63, 50], ["RM", 90, 45]];
@@ -3936,7 +3936,7 @@
     ["3-5-2", FM_BACK3, [["CDM", 36, 59], ["CDM", 64, 59]], [["LM", 10, 42], ["CAM", 50, 36], ["RM", 90, 42]], FM_ST2],
     ["4-1-2-1-2", FM_BACK4, [["CDM", 50, 59]], [["LM", 14, 44], ["RM", 86, 44]], [["CAM", 50, 32]], FM_ST2],
     ["4-1-2-1-2 (2)", FM_BACK4, [["CDM", 50, 59]], [["CM", 32, 46], ["CM", 68, 46]], [["CAM", 50, 32]], FM_ST2],
-    ["4-1-3-2", FM_BACK4, [["CDM", 50, 59]], [["LM", 12, 40], ["CM", 50, 43], ["RM", 88, 40]], FM_ST2],
+    ["4-1-3-2", FM_BACK4, [["CDM", 50, 61]], [["LM", 12, 40], ["CM", 50, 41], ["RM", 88, 40]], FM_ST2],
     ["4-1-4-1", FM_BACK4, [["CDM", 50, 59]], [["LM", 10, 40], ["CM", 36, 43], ["CM", 64, 43], ["RM", 90, 40]], [["ST", 50, 13]]],
     ["4-2-1-3", FM_BACK4, [["CDM", 36, 57], ["CDM", 64, 57]], [["CAM", 50, 38]], FM_FRONT3],
     ["4-2-2-2", FM_BACK4, [["CDM", 36, 57], ["CDM", 64, 57]], [["CAM", 18, 34], ["CAM", 82, 34]], FM_ST2],
@@ -3950,7 +3950,7 @@
     ["4-3-3 (3)", FM_BACK4, [["CDM", 34, 56], ["CDM", 66, 56], ["CM", 50, 42]], FM_FRONT3],
     ["4-3-3 (4)", FM_BACK4, [["CM", 28, 49], ["CM", 72, 49], ["CAM", 50, 37]], FM_FRONT3],
     ["4-3-3 (5)", FM_BACK4, [["CM", 26, 46], ["CDM", 50, 56], ["CM", 74, 46]], [["LW", 14, 20], ["ST", 50, 20], ["RW", 86, 20]]],
-    ["4-4-1-1 (2)", FM_BACK4, FM_MID4, [["ST", 50, 28]], [["ST", 50, 12]]],
+    ["4-4-1-1 (2)", FM_BACK4, FM_MID4, [["ST", 50, 31]], [["ST", 50, 11]]],
     ["4-4-2", FM_BACK4, FM_MID4, FM_ST2],
     ["4-4-2 (2)", FM_BACK4, [["LM", 10, 43], ["CDM", 37, 53], ["CDM", 63, 53], ["RM", 90, 43]], FM_ST2],
     ["4-5-1", FM_BACK4, [["LM", 10, 42], ["CM", 50, 54], ["CAM", 33, 34], ["CAM", 67, 34], ["RM", 90, 42]], [["ST", 50, 12]]],
@@ -3959,7 +3959,7 @@
     ["5-2-3", FM_BACK5, [["CM", 36, 49], ["CM", 64, 49]], FM_FRONT3],
     ["5-3-2", FM_BACK5, [["CM", 26, 47], ["CDM", 50, 54], ["CM", 74, 47]], FM_ST2],
     ["5-4-1", FM_BACK5, [["LM", 12, 42], ["CM", 37, 47], ["CM", 63, 47], ["RM", 88, 42]], [["ST", 50, 13]]]
-  ].map(([name, ...lines]) => ({ name, slots: [["GK", 50, 96]].concat(...lines).map(([p, x, y]) => ({ p, x, y })) }));
+  ].map(([name, ...lines]) => ({ name, slots: [["GK", 50, 97]].concat(...lines).map(([p, x, y]) => ({ p, x, y })) }));
   const fmByName = name => FORMATIONS.find(f => f.name === name) || null;
   const DEFAULT_FORMATION = "4-3-3";
   const BENCH_SIZE = 3;
@@ -4041,13 +4041,13 @@
           ${coachShieldHtml(p.id, 54)}
         </div>
         <div class="pitch">
-          <svg class="pitch-lines" viewBox="0 0 68 80" preserveAspectRatio="none" aria-hidden="true">
-            <rect x="1" y="1" width="66" height="78" fill="none"/>
-            <line x1="1" y1="40" x2="67" y2="40"/><circle cx="34" cy="40" r="9.15" fill="none"/>
+          <svg class="pitch-lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+            <rect x="1" y="1" width="66" height="98" fill="none"/>
+            <line x1="1" y1="50" x2="67" y2="50"/><circle cx="34" cy="50" r="9.15" fill="none"/>
             <rect x="14" y="1" width="40" height="17" fill="none"/><rect x="25" y="1" width="18" height="6" fill="none"/>
             <path d="M27.09 18 A9.15 9.15 0 0 0 40.91 18" fill="none"/>
-            <rect x="14" y="62" width="40" height="17" fill="none"/><rect x="25" y="73" width="18" height="6" fill="none"/>
-            <path d="M27.09 62 A9.15 9.15 0 0 1 40.91 62" fill="none"/>
+            <rect x="14" y="82" width="40" height="17" fill="none"/><rect x="25" y="93" width="18" height="6" fill="none"/>
+            <path d="M27.09 82 A9.15 9.15 0 0 1 40.91 82" fill="none"/>
           </svg>
           ${fm.slots.map((s, i) => fmSlotHtml(p, cards[st.slots[i]], s.p, i, "slot", editable, s.x, s.y)).join("")}
         </div>
