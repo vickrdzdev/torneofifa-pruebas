@@ -492,7 +492,7 @@
   .fm-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .fm-select { flex: 0 1 180px; }
   .fm-name-tag { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
-  .pitch { position: relative; aspect-ratio: 68 / 100; border-radius: 12px; overflow: hidden;
+  .pitch { position: relative; aspect-ratio: 68 / 90; border-radius: 12px; overflow: hidden;
     background: repeating-linear-gradient(180deg, #1f7a3d 0 10%, #1b6d36 10% 20%); }
   .pitch-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
   .pitch-lines * { stroke: rgba(255,255,255,.35); stroke-width: .5; }
@@ -504,7 +504,8 @@
   .fm-ph.empty { border-style: dashed; border-color: rgba(255,255,255,.7); background: rgba(6,23,14,.45); }
   .fm-warn { color: #ffd23f; font-weight: 900; margin-right: 3px; }
   .fm-name { max-width: 100%; font-size: 10.5px; font-weight: 700; line-height: 1.25; background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .fm-rat { font-size: 9.5px; font-weight: 700; color: #ffe08a; text-shadow: 0 1px 2px #000; }
+  .fm-face { position: relative; display: block; }
+  .fm-rat { position: absolute; right: -9px; bottom: -3px; min-width: 22px; padding: 1px 4px; border-radius: 8px; background: #ffe08a; color: #10241a; font-size: 10px; font-weight: 800; line-height: 1.3; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   .fm-bench { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; border-radius: 10px; background: #17602f; }
   .fm-bench-lbl { font-size: 11px; font-weight: 800; color: rgba(255,255,255,.75); letter-spacing: .04em; text-transform: uppercase; margin-right: 4px; }
   .fm-list { display: flex; flex-direction: column; gap: 4px; max-height: 55vh; overflow-y: auto; margin: 6px 0; }
@@ -3929,15 +3930,15 @@
   const FM_FRONT3 = [["LW", 14, 20], ["ST", 50, 13], ["RW", 86, 20]];
   const FM_MID4 = [["LM", 10, 45], ["CM", 37, 50], ["CM", 63, 50], ["RM", 90, 45]];
   const FORMATIONS = [
-    ["3-1-4-2", FM_BACK3, [["CDM", 50, 60]], [["LM", 10, 42], ["CM", 36, 45], ["CM", 64, 45], ["RM", 90, 42]], FM_ST2],
-    ["3-4-1-2", FM_BACK3, FM_MID4, [["CAM", 50, 31]], FM_ST2],
+    ["3-1-4-2", FM_BACK3, [["CDM", 50, 60]], [["LM", 10, 39], ["CM", 34, 41], ["CM", 66, 41], ["RM", 90, 39]], FM_ST2],
+    ["3-4-1-2", FM_BACK3, FM_MID4, [["CAM", 50, 33]], [["ST", 34, 13], ["ST", 66, 13]]],
     ["3-4-2-1", FM_BACK3, FM_MID4, [["CAM", 30, 28], ["CAM", 70, 28]], [["ST", 50, 12]]],
     ["3-4-3", FM_BACK3, FM_MID4, FM_FRONT3],
     ["3-5-2", FM_BACK3, [["CDM", 36, 59], ["CDM", 64, 59]], [["LM", 10, 42], ["CAM", 50, 36], ["RM", 90, 42]], FM_ST2],
     ["4-1-2-1-2", FM_BACK4, [["CDM", 50, 59]], [["LM", 14, 44], ["RM", 86, 44]], [["CAM", 50, 32]], FM_ST2],
     ["4-1-2-1-2 (2)", FM_BACK4, [["CDM", 50, 59]], [["CM", 32, 46], ["CM", 68, 46]], [["CAM", 50, 32]], FM_ST2],
     ["4-1-3-2", FM_BACK4, [["CDM", 50, 61]], [["LM", 12, 40], ["CM", 50, 41], ["RM", 88, 40]], FM_ST2],
-    ["4-1-4-1", FM_BACK4, [["CDM", 50, 59]], [["LM", 10, 40], ["CM", 36, 43], ["CM", 64, 43], ["RM", 90, 40]], [["ST", 50, 13]]],
+    ["4-1-4-1", FM_BACK4, [["CDM", 50, 59]], [["LM", 10, 38], ["CM", 34, 40], ["CM", 66, 40], ["RM", 90, 38]], [["ST", 50, 13]]],
     ["4-2-1-3", FM_BACK4, [["CDM", 36, 57], ["CDM", 64, 57]], [["CAM", 50, 38]], FM_FRONT3],
     ["4-2-2-2", FM_BACK4, [["CDM", 36, 57], ["CDM", 64, 57]], [["CAM", 18, 34], ["CAM", 82, 34]], FM_ST2],
     ["4-2-3-1", FM_BACK4, [["CDM", 36, 57], ["CDM", 64, 57]], [["LM", 14, 36], ["CAM", 50, 35], ["RM", 86, 36]], [["ST", 50, 13]]],
@@ -4006,9 +4007,9 @@
     const face = card
       ? (card.photo ? `<img src="${escapeHtml(card.photo)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span>${escapeHtml(card.pos)}</span>`)
       : `<span>${escapeHtml(label)}</span>`;
-    const inner = `<span class="fm-ph ${card ? "" : "empty"}">${face}</span>
-      <span class="fm-name">${off ? `<b class="fm-warn" aria-label="fuera de su posición">!</b>` : ""}${card ? escapeHtml(shortCardName(card.name)) : escapeHtml(label)}</span>
-      ${card ? `<span class="fm-rat">${card.rat} · ${escapeHtml(label)}</span>` : ""}`;
+    // RAT en una etiqueta sobre la foto y el nombre abajo: así cada lugar ocupa poco alto.
+    const inner = `<span class="fm-face"><span class="fm-ph ${card ? "" : "empty"}">${face}</span>${card ? `<span class="fm-rat">${card.rat}</span>` : ""}</span>
+      <span class="fm-name">${off ? `<b class="fm-warn" aria-label="fuera de su posición">!</b>` : ""}${card ? escapeHtml(shortCardName(card.name)) : escapeHtml(label)}</span>`;
     return editable
       ? `<button class="fm-slot" ${pos} data-action="fm-pick" data-p="${p.id}" data-kind="${kind}" data-i="${idx}" title="${off ? escapeHtml(card.name + " juega fuera de su posición") : ""}">${inner}</button>`
       : `<div class="fm-slot" ${pos}>${inner}</div>`;
@@ -4041,13 +4042,13 @@
           ${coachShieldHtml(p.id, 54)}
         </div>
         <div class="pitch">
-          <svg class="pitch-lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
-            <rect x="1" y="1" width="66" height="98" fill="none"/>
-            <line x1="1" y1="50" x2="67" y2="50"/><circle cx="34" cy="50" r="9.15" fill="none"/>
+          <svg class="pitch-lines" viewBox="0 0 68 90" preserveAspectRatio="none" aria-hidden="true">
+            <rect x="1" y="1" width="66" height="88" fill="none"/>
+            <line x1="1" y1="45" x2="67" y2="45"/><circle cx="34" cy="45" r="9.15" fill="none"/>
             <rect x="14" y="1" width="40" height="17" fill="none"/><rect x="25" y="1" width="18" height="6" fill="none"/>
             <path d="M27.09 18 A9.15 9.15 0 0 0 40.91 18" fill="none"/>
-            <rect x="14" y="82" width="40" height="17" fill="none"/><rect x="25" y="93" width="18" height="6" fill="none"/>
-            <path d="M27.09 82 A9.15 9.15 0 0 1 40.91 82" fill="none"/>
+            <rect x="14" y="72" width="40" height="17" fill="none"/><rect x="25" y="83" width="18" height="6" fill="none"/>
+            <path d="M27.09 72 A9.15 9.15 0 0 1 40.91 72" fill="none"/>
           </svg>
           ${fm.slots.map((s, i) => fmSlotHtml(p, cards[st.slots[i]], s.p, i, "slot", editable, s.x, s.y)).join("")}
         </div>
