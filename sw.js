@@ -50,22 +50,23 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (isStatic(url)) { e.respondWith(fromStatic(req, url)); return; }
   if (url.origin !== self.location.origin) return;
-  e.respondWith(networkFirst(req));
+  e.respondWith(networkFirst(req, e));
 });
 
 // Primero de internet; si tarda más de 3 s (señal débil) o no hay conexión, usa la
 // última copia guardada. La descarga sigue en segundo plano y actualiza la copia
 // para la siguiente vez que se abra.
 const NET_TIMEOUT_MS = 3000;
-function networkFirst(req) {
+function networkFirst(req, e) {
   const cached = () => caches.match(req).then((hit) => hit || (req.mode === "navigate" ? caches.match("index.html") : undefined));
+  let saving = Promise.resolve();
   const net = fetch(req).then((res) => {
-    if (res.ok) {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(req, copy));
-    }
+    if (res.ok) saving = caches.open(CACHE).then((c) => c.put(req, res.clone()));
     return res;
   });
+  // Que el navegador no corte la descarga cuando ya se respondió con la copia guardada:
+  // así la copia se actualiza y la siguiente vez abre la versión nueva.
+  e.waitUntil(net.then(() => saving, () => {}));
   return new Promise((resolve, reject) => {
     let done = false;
     const finish = (res) => { if (!done && res) { done = true; resolve(res); } };
