@@ -525,8 +525,6 @@
   .lu-img.code .frame { aspect-ratio: auto; height: 40px; }
   .lu-files.three { grid-template-columns: 1fr 1fr 1fr; }
   .lu-img .frame.pending-img { outline: 2px dashed var(--gold); outline-offset: -2px; }
-  .lu-code { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
-  .lu-code code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13.5px; }
   .lu-form { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
   .lu-form .text-input { padding: 9px 11px; font-size: 14px; }
   .lu-files { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -5352,7 +5350,7 @@
     const kept = captureScoreInputs();
     const loginVals = ["login-user", "login-pass"].map(id => { const el = document.getElementById(id); return el ? el.value : null; });
     const a = document.activeElement;
-    const focusId = a && a.id && /^(market-search$|lu-code-|acc-|pen-note$|team-name-)/.test(a.id) ? a.id : null;
+    const focusId = a && a.id && /^(market-search$|acc-|pen-note$|team-name-)/.test(a.id) ? a.id : null;
     const caret = focusId ? a.selectionStart : null;
     renderInner();
     restoreScoreInputs(kept);
