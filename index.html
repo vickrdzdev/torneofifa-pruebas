@@ -514,11 +514,12 @@
   .draft-turn strong { color: var(--accent); font-size: 16px; }
   .market-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
   .market-controls #market-search { flex: 1 1 260px; }
-  .pos-dd { position: relative; flex: 0 0 auto; }
-  .pos-dd > summary { list-style: none; cursor: pointer; padding-right: 30px; position: relative; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Ancho fijo: así el filtro no se mueve ni reacomoda la fila al cambiar lo elegido. */
+  .pos-dd { position: relative; flex: 0 0 210px; width: 210px; }
+  .pos-dd > summary { list-style: none; cursor: pointer; padding-right: 30px; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pos-dd > summary::-webkit-details-marker { display: none; }
   .pos-dd > summary::after { content: "▾"; position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
-  .pos-dd-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 210px; max-height: 60vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.3); padding: 6px; }
+  .pos-dd-panel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; max-height: 60vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.3); padding: 6px; }
   .pos-dd-opt { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; font-size: 14px; cursor: pointer; }
   .pos-dd-opt:hover { background: var(--surface-2); }
   .pos-dd-opt input { width: 18px; height: 18px; accent-color: var(--accent); }
