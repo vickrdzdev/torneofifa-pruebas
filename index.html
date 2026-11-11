@@ -3885,10 +3885,7 @@
     const validTabs = state.players.map(p => p.id).concat(isAdmin ? ["cuentas"] : []);
     if (!luTab || !validTabs.includes(luTab)) luTab = (state.players.find(p => myPlayerIds.includes(p.id)) || state.players[0] || {}).id || null;
     const order = state.players.slice().sort((a, b) => (myPlayerIds.includes(b.id) ? 1 : 0) - (myPlayerIds.includes(a.id) ? 1 : 0));
-    const tabs = order.map(p => {
-      const done = (seasonLineupOf(p.id) || {}).complete;
-      return `<button class="tab-btn ${luTab === p.id ? "active" : ""}" data-action="set-lu-tab" data-tab="${p.id}">${done ? "✅ " : ""}${escapeHtml(p.name)}</button>`;
-    }).join("") + (isAdmin ? `<button class="tab-btn ${luTab === "cuentas" ? "active" : ""}" data-action="set-lu-tab" data-tab="cuentas">🔑 Cuentas</button>` : "");
+    const tabs = order.map(p => `<button class="tab-btn ${luTab === p.id ? "active" : ""}" data-action="set-lu-tab" data-tab="${p.id}">${escapeHtml(p.name)}</button>`).join("") + (isAdmin ? `<button class="tab-btn ${luTab === "cuentas" ? "active" : ""}" data-action="set-lu-tab" data-tab="cuentas">🔑 Cuentas</button>` : "");
     if (luTab === "cuentas") return { tabs, body: renderAccounts() };
     const p = state.players.find(x => x.id === luTab);
     if (!p) return { tabs, body: `<div class="empty-state">No hay players.</div>` };
