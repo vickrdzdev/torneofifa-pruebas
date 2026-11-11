@@ -505,6 +505,7 @@
   .fm-warn { color: #ffd23f; font-weight: 900; margin-right: 3px; }
   .fm-name { max-width: 100%; font-size: 10.5px; font-weight: 700; line-height: 1.25; background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fm-face { position: relative; display: block; }
+  .fm-pos { position: absolute; left: -9px; bottom: -3px; min-width: 22px; padding: 1px 4px; border-radius: 8px; background: #10241a; color: #fff; border: 1px solid rgba(255,255,255,.55); font-size: 9.5px; font-weight: 800; line-height: 1.3; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   .fm-rat { position: absolute; right: -9px; bottom: -3px; min-width: 22px; padding: 1px 4px; border-radius: 8px; background: #ffe08a; color: #10241a; font-size: 10px; font-weight: 800; line-height: 1.3; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
   .fm-bench { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; border-radius: 10px; background: #17602f; }
   .fm-bench-lbl { font-size: 11px; font-weight: 800; color: rgba(255,255,255,.75); letter-spacing: .04em; text-transform: uppercase; margin-right: 4px; }
@@ -4007,8 +4008,8 @@
     const face = card
       ? (card.photo ? `<img src="${escapeHtml(card.photo)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span>${escapeHtml(card.pos)}</span>`)
       : `<span>${escapeHtml(label)}</span>`;
-    // RAT en una etiqueta sobre la foto y el nombre abajo: así cada lugar ocupa poco alto.
-    const inner = `<span class="fm-face"><span class="fm-ph ${card ? "" : "empty"}">${face}</span>${card ? `<span class="fm-rat">${card.rat}</span>` : ""}</span>
+    // Posición y RAT en etiquetas sobre la foto y el nombre abajo: así cada lugar ocupa poco alto.
+    const inner = `<span class="fm-face"><span class="fm-ph ${card ? "" : "empty"}">${face}</span>${card ? `<span class="fm-pos">${escapeHtml(label)}</span><span class="fm-rat">${card.rat}</span>` : ""}</span>
       <span class="fm-name">${off ? `<b class="fm-warn" aria-label="fuera de su posición">!</b>` : ""}${card ? escapeHtml(shortCardName(card.name)) : escapeHtml(label)}</span>`;
     return editable
       ? `<button class="fm-slot" ${pos} data-action="fm-pick" data-p="${p.id}" data-kind="${kind}" data-i="${idx}" title="${off ? escapeHtml(card.name + " juega fuera de su posición") : ""}">${inner}</button>`
