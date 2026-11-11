@@ -502,7 +502,7 @@
   .fm-ph { width: 42px; height: 42px; border-radius: 50%; overflow: hidden; background: rgba(6,23,14,.75); border: 2px solid #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #fff; }
   .fm-ph img { width: 100%; height: 100%; object-fit: cover; }
   .fm-ph.empty { border-style: dashed; border-color: rgba(255,255,255,.7); background: rgba(6,23,14,.45); }
-  .fm-ph.off { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+  .fm-warn { color: #ffd23f; font-weight: 900; margin-right: 3px; }
   .fm-name { max-width: 100%; font-size: 10.5px; font-weight: 700; line-height: 1.25; background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fm-rat { font-size: 9.5px; font-weight: 700; color: #ffe08a; text-shadow: 0 1px 2px #000; }
   .fm-bench { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; border-radius: 10px; background: #17602f; }
@@ -3995,9 +3995,9 @@
   }
   // Formaciones del juego (las de FC 25/26). Cada lugar: posición y coordenadas en la
   // cancha (x: 0 izquierda → 100 derecha; y: 0 portería rival → 100 portería propia).
-  const FM_BACK4 = [["LB", 12, 70], ["CB", 37, 75], ["CB", 63, 75], ["RB", 88, 70]];
-  const FM_BACK3 = [["CB", 24, 75], ["CB", 50, 77], ["CB", 76, 75]];
-  const FM_BACK5 = [["LB", 8, 64], ["CB", 29, 75], ["CB", 50, 77], ["CB", 71, 75], ["RB", 92, 64]];
+  const FM_BACK4 = [["LB", 12, 67], ["CB", 37, 71], ["CB", 63, 71], ["RB", 88, 67]];
+  const FM_BACK3 = [["CB", 24, 71], ["CB", 50, 72], ["CB", 76, 71]];
+  const FM_BACK5 = [["LB", 8, 61], ["CB", 29, 71], ["CB", 50, 72], ["CB", 71, 71], ["RB", 92, 61]];
   const FM_ST2 = [["ST", 36, 15], ["ST", 64, 15]];
   const FM_FRONT3 = [["LW", 14, 20], ["ST", 50, 13], ["RW", 86, 20]];
   const FM_MID4 = [["LM", 10, 45], ["CM", 37, 50], ["CM", 63, 50], ["RM", 90, 45]];
@@ -4032,7 +4032,7 @@
     ["5-2-3", FM_BACK5, [["CM", 36, 49], ["CM", 64, 49]], FM_FRONT3],
     ["5-3-2", FM_BACK5, [["CM", 26, 47], ["CDM", 50, 54], ["CM", 74, 47]], FM_ST2],
     ["5-4-1", FM_BACK5, [["LM", 12, 42], ["CM", 37, 47], ["CM", 63, 47], ["RM", 88, 42]], [["ST", 50, 13]]]
-  ].map(([name, ...lines]) => ({ name, slots: [["GK", 50, 92]].concat(...lines).map(([p, x, y]) => ({ p, x, y })) }));
+  ].map(([name, ...lines]) => ({ name, slots: [["GK", 50, 96]].concat(...lines).map(([p, x, y]) => ({ p, x, y })) }));
   const fmByName = name => FORMATIONS.find(f => f.name === name) || null;
   const DEFAULT_FORMATION = "4-3-3";
   const BENCH_SIZE = 3;
@@ -4064,13 +4064,13 @@
   }
   function fmSlotHtml(j, p, card, label, idx, kind, editable, x, y) {
     // Margen arriba y abajo para que el nombre del portero y de los delanteros no se corte.
-    const pos = x != null ? `style="left:${x}%;top:${(6 + y * 0.84).toFixed(1)}%"` : "";
+    const pos = x != null ? `style="left:${x}%;top:${(4 + y * 0.88).toFixed(1)}%"` : "";
     const off = card && kind === "slot" && !cardFits(card, label);
     const face = card
       ? (card.photo ? `<img src="${escapeHtml(card.photo)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span>${escapeHtml(card.pos)}</span>`)
       : `<span>${escapeHtml(label)}</span>`;
-    const inner = `<span class="fm-ph ${card ? "" : "empty"} ${off ? "off" : ""}">${face}</span>
-      <span class="fm-name">${card ? escapeHtml(shortCardName(card.name)) : escapeHtml(label)}</span>
+    const inner = `<span class="fm-ph ${card ? "" : "empty"}">${face}</span>
+      <span class="fm-name">${off ? `<b class="fm-warn" aria-label="fuera de su posición">!</b>` : ""}${card ? escapeHtml(shortCardName(card.name)) : escapeHtml(label)}</span>
       ${card ? `<span class="fm-rat">${card.rat} · ${escapeHtml(label)}</span>` : ""}`;
     return editable
       ? `<button class="fm-slot" ${pos} data-action="fm-pick" data-j="${j.id}" data-p="${p.id}" data-kind="${kind}" data-i="${idx}" title="${off ? escapeHtml(card.name + " juega fuera de su posición") : ""}">${inner}</button>`
@@ -4168,7 +4168,8 @@
     const where = {};
     st.slots.forEach((id, i) => { if (id) where[id] = fmByName(st.formation).slots[i].p; });
     st.bench.forEach(id => { if (id) where[id] = "banca"; });
-    const list = squadCards(fmPick.pid).sort((a, b) => (label !== "SUP" ? (cardFits(b, label) - cardFits(a, label)) : 0) || b.rat - a.rat || a.name.localeCompare(b.name));
+    // Los que ya están en otro lugar (titulares o banca) no aparecen.
+    const list = squadCards(fmPick.pid).filter(c => !where[c.id] || c.id === cur).sort((a, b) => (label !== "SUP" ? (cardFits(b, label) - cardFits(a, label)) : 0) || b.rat - a.rat || a.name.localeCompare(b.name));
     return `
       <div class="modal-overlay"><div class="modal-box" data-stop-close>
         <h3>${fmPick.kind === "slot" ? "Titular · " + escapeHtml(label) : "Banca"}</h3>
@@ -4176,7 +4177,7 @@
         <div class="fm-list">${list.map(c => `
           <button class="fm-row ${c.id === cur ? "on" : ""}" data-action="fm-set" data-card="${c.id}">
             ${c.photo ? `<img src="${escapeHtml(c.photo)}" alt="" width="34" height="34" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span class="fm-noph"></span>`}
-            <span class="fm-row-name">${escapeHtml(c.name)}<small>${escapeHtml([c.pos].concat(c.altPos).join(" · "))}${where[c.id] && c.id !== cur ? ` · ahora en ${escapeHtml(where[c.id])}` : ""}</small></span>
+            <span class="fm-row-name">${escapeHtml(c.name)}<small>${escapeHtml([c.pos].concat(c.altPos).join(" · "))}</small></span>
             <span class="fm-row-rat ${label !== "SUP" && !cardFits(c, label) ? "off" : ""}">${c.rat}</span>
           </button>`).join("") || `<p class="muted">Tu equipo no tiene jugadores.</p>`}</div>
         <div class="modal-close-row"><button class="btn-secondary" data-action="fm-close">Cerrar</button></div>
@@ -4227,7 +4228,7 @@
     const mine = myPlayerIds.includes(playerId);
     const img = url ? `<img src="${escapeHtml(url)}" alt="DT de ${escapeHtml(p.name)}" width="${size}" height="${Math.round(size * 1.15)}">` : `<span class="dt-empty" style="width:${size}px;height:${Math.round(size * 1.15)}px">DT</span>`;
     return mine
-      ? `<label class="dt-shield" title="${url ? "Cambiar foto del DT" : "Subir foto del DT"}">${coachBusy ? `<span class="dt-empty" style="width:${size}px;height:${Math.round(size * 1.15)}px">…</span>` : img}<span class="dt-lbl">${url ? "📷 DT" : "📷 Foto DT"}</span><input type="file" accept="image/*" data-coach-file="${playerId}" ${coachBusy ? "disabled" : ""}></label>`
+      ? `<label class="dt-shield" title="${url ? "Cambiar foto del DT" : "Subir foto del DT"}">${coachBusy ? `<span class="dt-empty" style="width:${size}px;height:${Math.round(size * 1.15)}px">…</span>` : img}<span class="dt-lbl">${url ? "DT" : "📷 Foto DT"}</span><input type="file" accept="image/*" data-coach-file="${playerId}" ${coachBusy ? "disabled" : ""}></label>`
       : `<span class="dt-shield">${img}<span class="dt-lbl">DT</span></span>`;
   }
   let coachBusy = false, coachPreview = null; // { pid, blob, url }
@@ -4290,8 +4291,9 @@
     gold.addColorStop(0, "#fff1b8"); gold.addColorStop(0.35, "#e7b75d"); gold.addColorStop(0.7, "#b8862d"); gold.addColorStop(1, "#f3d27a");
     shieldPath(ctx, W, H, 6); ctx.fillStyle = gold; ctx.fill();
     ctx.lineWidth = 6; ctx.strokeStyle = "#7a5512"; ctx.stroke();
-    const inner = ctx.createLinearGradient(0, 0, 0, H);
-    inner.addColorStop(0, "#1d3a30"); inner.addColorStop(1, "#0b1410");
+    // Fondo del escudo también dorado (más claro al centro), detrás de la foto recortada.
+    const inner = ctx.createRadialGradient(W / 2, H * 0.4, 20, W / 2, H * 0.45, H * 0.6);
+    inner.addColorStop(0, "#fbe7a6"); inner.addColorStop(0.55, "#e2b55a"); inner.addColorStop(1, "#a8761f");
     shieldPath(ctx, W, H, 26); ctx.fillStyle = inner; ctx.fill();
     ctx.save(); shieldPath(ctx, W, H, 26); ctx.clip();
     // La persona ocupa el escudo de abajo hacia arriba (cabeza y hombros).
