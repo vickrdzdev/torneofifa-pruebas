@@ -22,15 +22,23 @@ type Row = {
 
 async function recipients(row: Row): Promise<string[] | "all"> {
   const jr = row.jornada_id
-    ? (await sb.from("jornadas").select("id, season_id, console1_id, console2_id").eq("id", row.jornada_id).maybeSingle()).data
+    ? (await sb.from("jornadas").select("id, season_id, jornada_number, console1_id, console2_id").eq("id", row.jornada_id).maybeSingle()).data
     : null;
   switch (row.kind) {
     case "lineup_reminder":
     case "lineup_deadline": {
       if (!jr) return [];
       const { data: players } = await sb.from("players").select("id").eq("season_id", jr.season_id);
-      const { data: lus } = await sb.from("lineups").select("player_id, submitted_at, late").eq("jornada_id", jr.id);
-      const ok = new Set((lus || []).filter((l) => l.submitted_at && (row.kind === "lineup_reminder" || !l.late)).map((l) => l.player_id));
+      let ok: Set<string>;
+      const { data: fm } = await sb.rpc("lineup_uses_formation", { p_season: jr.season_id, p_number: jr.jornada_number });
+      if (fm) {
+        // Alineación única por player: cuenta si su alineación vigente está completa.
+        const { data: sl } = await sb.from("season_lineups").select("player_id, complete").eq("season_id", jr.season_id);
+        ok = new Set((sl || []).filter((l) => l.complete).map((l) => l.player_id));
+      } else {
+        const { data: lus } = await sb.from("lineups").select("player_id, submitted_at, late").eq("jornada_id", jr.id);
+        ok = new Set((lus || []).filter((l) => l.submitted_at && (row.kind === "lineup_reminder" || !l.late)).map((l) => l.player_id));
+      }
       const missing = (players || []).map((p) => p.id).filter((id) => !ok.has(id));
       // Aviso personal (falta al vencer el plazo): solo si ese player sí la debe.
       return row.target_player ? missing.filter((id) => id === row.target_player) : missing;

@@ -488,7 +488,7 @@
   /* Código en imagen: abajo de titulares y banca, a lo ancho y con la altura de una línea de texto. */
   .lu-img.code { grid-column: 1 / -1; }
   /* Alineación con formación */
-  .fm-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .fm-one { max-width: 520px; }
   .fm-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .fm-select { flex: 0 1 180px; }
   .fm-name-tag { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
@@ -779,8 +779,6 @@
   let myPlayerIds = [];       // players ligados al correo de la sesión
   let playerAccounts = [];    // correos ligados (el admin ve todos; un player, el suyo)
   let luTab = null;           // pestaña del módulo Alineaciones
-  let luDrafts = {};          // cambios sin guardar por "jornadaId:playerId"
-  let luSaving = null;
   let accDrafts = {};
   let statsTab = "general";   // "general" | "resumen" | "h2h" | "recompensas" | "palmares"
   let magnaDraft = null;      // selección de la Final Magna aún sin guardar
@@ -1090,7 +1088,7 @@
     if (error) return null;
     if (!seasons || !seasons.length) return { season: null };
     const sid = seasons[0].id;
-    const [adm, accounts, players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs] = await Promise.all([
+    const [adm, accounts, players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs, season_lineups] = await Promise.all([
       Promise.resolve(sb.rpc("is_admin")).then(x => !!(x && x.data === true), () => false),
       rows(sb.from("player_accounts").select("*")),
       rows(sb.from("players").select("*").eq("season_id", sid).order("sort_order")),
@@ -1100,7 +1098,8 @@
       rows(sb.from("lineups").select("*").eq("season_id", sid)),
       rows(sb.from("draft_states").select("*").eq("season_id", sid)),
       rows(sb.from("penalties").select("*").eq("season_id", sid).order("created_at")),
-      rows(sb.from("push_subscriptions").select("email, created_at"))
+      rows(sb.from("push_subscriptions").select("email, created_at")),
+      rows(sb.from("season_lineups").select("*").eq("season_id", sid))
     ]);
     const ids = jornadas.map(j => j.id);
     const [attendance, matches, rsvps] = ids.length ? await Promise.all([
@@ -1108,7 +1107,7 @@
       rows(sb.from("matches").select("*").in("jornada_id", ids)),
       rows(sb.from("jornada_rsvps").select("*").in("jornada_id", ids))
     ]) : [[], [], []];
-    return { is_admin: adm, accounts, season: seasons[0], players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs, attendance, matches, rsvps };
+    return { is_admin: adm, accounts, season: seasons[0], players, jornadas, purchases, passes, lineups, season_lineups, draft_states, penalties, push_subs, attendance, matches, rsvps };
   }
   // Rol de la sesión a partir de lo que trae la carga.
   function applyRole(b) {
@@ -1152,7 +1151,7 @@
       const jornada = {
         id: jr.id, jornada_number: jr.jornada_number, label: jr.label, playDate: jr.play_date || null,
         console1Id: jr.console1_id || null, console2Id: jr.console2_id || null,
-        locationUrl: jr.location_url || null,
+        locationUrl: jr.location_url || null, lineupSnapshotAt: jr.lineup_snapshot_at || null,
         rsvps: (b.rsvps || []).filter(r => r.jornada_id === jr.id),
         updatedAt: allM.reduce((mx, m) => (m.created_at && m.created_at > mx ? m.created_at : mx), ""),
         activeIds, matches: groupM.map(mapMatchRow), playoff
@@ -1161,7 +1160,7 @@
       return jornada;
     });
 
-    return { season: b.season, players: b.players || [], jornadas, purchases: b.purchases || [], passes: b.passes || [], lineups: b.lineups || [],
+    return { season: b.season, players: b.players || [], jornadas, purchases: b.purchases || [], passes: b.passes || [], lineups: b.lineups || [], seasonLineups: b.season_lineups || [],
       lineupUrls, logoUrls, coachUrls: coachUrls || {}, penalties: b.penalties || [], draftStates: b.draft_states || [], pushSubs: isAdmin ? (b.push_subs || []) : [] };
   }
   // Datos de la última vez, guardados en el celular: la app los muestra al abrir
@@ -1196,7 +1195,7 @@
     applyRole(b);
     const logoPaths = (b.players || []).map(p => p.logo_path).filter(Boolean);
     const paths = [];
-    (b.lineups || []).forEach(l => { ["code_path", "starters_path", "bench_path"].forEach(k => { if (l[k]) paths.push(l[k]); }); });
+    (b.season_lineups || []).forEach(l => { if (l.code_path) paths.push(l.code_path); });
     const coachPaths = (b.players || []).map(p => p.coach_path).filter(Boolean);
     const [logoUrls, lineupUrls, coachUrls] = await Promise.all([signPaths("logos", logoPaths), signPaths("lineups", paths), signPaths("coaches", coachPaths)]);
     if (gen !== editGen) return;
@@ -1490,7 +1489,7 @@
     unsubscribeRealtime();
     state = null; loading = false;
     hasSession = false; isAdmin = false; myPlayerIds = []; playerAccounts = [];
-    luDrafts = {}; accDrafts = {}; magnaDraft = null;
+    accDrafts = {}; magnaDraft = null;
     render();
   }
   function renderLoginScreen() {
@@ -1569,6 +1568,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "team_purchases" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "draft_passes" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "lineups" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "season_lineups" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "penalties" }, scheduleReload)
       .on("postgres_changes", { event: "*", schema: "public", table: "draft_states" }, scheduleReload)
       .subscribe();
@@ -2915,7 +2915,7 @@
   }
   // Acciones que sí se permiten con datos de la última vez (solo navegar y ver).
   const STALE_OK = new Set(["close-buy", "close-end-ft", "close-help", "close-login", "close-nav", "close-pass", "close-sell", "close-start-initial",
-    "copy-lu-code", "hide-push-banner", "market-page", "market-page-to", "market-sort", "open-dedulce", "open-help", "open-nav", "fm-close", "coach-cancel", "retry-market",
+    "hide-push-banner", "market-page", "market-page-to", "market-sort", "open-dedulce", "open-help", "open-nav", "fm-close", "coach-cancel", "retry-market",
     "set-lu-tab", "set-module", "set-stats-filter", "set-stats-tab", "set-tab", "set-team-tab", "admin-logout"]);
   function staleBlocked() {
     if (!state || !state.stale) return false;
@@ -3476,6 +3476,8 @@
     return "−" + sc.pts + " pts en la Tabla General" + turns;
   }
   function autoLineupReason(j, playerId) {
+    // Con formación, se revisa la copia que se toma al vencer el plazo (unos segundos después).
+    if (lineupUsesFormation(j) && !j.lineupSnapshotAt) return null;
     const l = lineupOf(j.id, playerId);
     if (l && l.submitted_at && !l.late) return null;
     if (l && l.submitted_at) return "la subió tarde";
@@ -3868,127 +3870,57 @@
   function formatStamp(ts) {
     return new Date(ts).toLocaleString("es-MX", { timeZone: "America/Mexico_City", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
   }
-  // El código de la alineación se sube como imagen (evita errores al teclearlo).
-  // Excepción: en el Torneo FC27 (producción y pruebas) la J1 se entregó con el código en texto.
-  // En la base, lineups_guard aplica la misma regla.
+  // En el Torneo FC27 (producción y pruebas) la J1 y la J2 se entregaron con capturas; desde la J3,
+  // con formación. En torneos nuevos, con formación desde la J1.
   const LINEUP_TEXT_CODE_J1_SEASONS = ["46f41d3f-0a28-4716-90bd-08948def700a", "f96f2078-5c80-43ea-a0b4-e91750df4fe9"];
-  function lineupCodeIsImage(j) {
-    if (!j || j.jornada_number < 1) return false;
-    return !(j.jornada_number === 1 && LINEUP_TEXT_CODE_J1_SEASONS.includes(state.season && state.season.id));
-  }
   function lineupImgUrl(path) {
     if (!path) return null;
     return (state.lineupUrls || {})[path] || null;
   }
+  // Copia de la alineación de cada quien al vencer el plazo de una Jornada (para las faltas).
   function lineupOf(jornadaId, playerId) {
     return (state.lineups || []).find(l => l.jornada_id === jornadaId && l.player_id === playerId) || null;
   }
-  function canEditLineup(playerId) {
-    return isAdmin || myPlayerIds.includes(playerId);
-  }
-  function defaultLineupTab(js) {
-    const next = js.find(j => { const r = jornadaRewards(j); return !(r && r.finalDone); });
-    return (next || js[js.length - 1]).id;
-  }
+  // Módulo Alineaciones: una alineación vigente por player (pestañas = players).
   function renderLineupsModule() {
-    loadMarket(); // fotos y posiciones de los jugadores (formación)
-    const js = state.jornadas.filter(j => j.jornada_number >= 1);
-    if (!js.length) return { tabs: "", body: `<div class="empty-state">No hay Jornadas con alineación.</div>` };
-    const validTabs = js.map(j => j.id).concat(isAdmin ? ["cuentas"] : []);
-    if (!luTab || !validTabs.includes(luTab)) luTab = defaultLineupTab(js);
-    const tabs = js.map(j => `<button class="tab-btn ${luTab === j.id ? "active" : ""}" data-action="set-lu-tab" data-tab="${j.id}">${escapeHtml(j.label)}</button>`).join("")
-      + (isAdmin ? `<button class="tab-btn ${luTab === "cuentas" ? "active" : ""}" data-action="set-lu-tab" data-tab="cuentas">🔑 Cuentas</button>` : "");
-    if (luTab === "cuentas") return { tabs, body: renderAccounts() };
-
-    const j = js.find(x => x.id === luTab);
-    const dl = lineupDeadline(j.playDate, j.id);
-    const past = dl && Date.now() >= dl.getTime();
-    const banner = !dl
-      ? `<div class="draft-banner muted">📅 La ${escapeHtml(j.label)} aún no tiene fecha: el límite para subir la alineación se fija cuando el admin la capture.</div>`
-      : `<div class="draft-banner ${past ? "closed" : "open"}"><span class="draft-tag ${past ? "closed" : "open"}" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">${past ? "CERRADO" : "ABIERTO"}</span>
-          <span>Límite: <strong>${escapeHtml(formatDeadline(dl))}</strong>${past ? " · Quien la suba ahora queda marcado como <strong>tarde</strong>." : ""}</span></div>`;
-    const done = state.players.filter(p => { const l = lineupOf(j.id, p.id); return l && l.submitted_at; }).length;
-    const loginHint = !hasSession
-      ? `<p class="lu-note" style="margin-bottom:12px;">¿Eres player? <a href="#" data-action="open-login" style="color:var(--accent)">Inicia sesión</a> para subir tu alineación.</p>`
-      : (!isAdmin && !myPlayerIds.length ? `<p class="lu-note warn" style="margin-bottom:12px;">Tu correo no está ligado a ningún player; pídeselo al admin.</p>` : "");
+    loadMarket(); // fotos y posiciones de los jugadores
+    const validTabs = state.players.map(p => p.id).concat(isAdmin ? ["cuentas"] : []);
+    if (!luTab || !validTabs.includes(luTab)) luTab = (state.players.find(p => myPlayerIds.includes(p.id)) || state.players[0] || {}).id || null;
     const order = state.players.slice().sort((a, b) => (myPlayerIds.includes(b.id) ? 1 : 0) - (myPlayerIds.includes(a.id) ? 1 : 0));
+    const tabs = order.map(p => {
+      const done = (seasonLineupOf(p.id) || {}).complete;
+      return `<button class="tab-btn ${luTab === p.id ? "active" : ""}" data-action="set-lu-tab" data-tab="${p.id}">${done ? "✅ " : ""}${escapeHtml(p.name)}</button>`;
+    }).join("") + (isAdmin ? `<button class="tab-btn ${luTab === "cuentas" ? "active" : ""}" data-action="set-lu-tab" data-tab="cuentas">🔑 Cuentas</button>` : "");
+    if (luTab === "cuentas") return { tabs, body: renderAccounts() };
+    const p = state.players.find(x => x.id === luTab);
+    if (!p) return { tabs, body: `<div class="empty-state">No hay players.</div>` };
+    const lock = lineupLock();
+    const banner = lock.locked
+      ? `<div class="draft-banner closed"><span class="draft-tag closed" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">CERRADA</span>
+          <span>Venció el plazo de la ${escapeHtml(lock.j.label)} (${escapeHtml(formatDeadline(lock.dl))}). Se vuelve a abrir al terminar el ${escapeHtml(prettyDate(lock.j.playDate))}.</span></div>`
+      : lock.next
+        ? `<div class="draft-banner open"><span class="draft-tag open" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">ABIERTA</span>
+          <span>Para la ${escapeHtml(lock.next.label)}, cierra el <strong>${escapeHtml(formatDeadline(lock.nextDl))}</strong></span></div>`
+        : `<div class="draft-banner muted">📅 Abierta: el próximo cierre se fija cuando el admin capture la fecha de la siguiente Jornada.</div>`;
+    const done = state.players.filter(x => (seasonLineupOf(x.id) || {}).complete).length;
+    const loginHint = !hasSession
+      ? `<p class="lu-note" style="margin-bottom:12px;">¿Eres player? <a href="#" data-action="open-login" style="color:var(--accent)">Inicia sesión</a> para armar tu alineación.</p>`
+      : (!isAdmin && !myPlayerIds.length ? `<p class="lu-note warn" style="margin-bottom:12px;">Tu correo no está ligado a ningún player; pídeselo al admin.</p>` : "");
     const body = `
       <div class="section">
-        <div class="section-head"><h2>Alineaciones · ${escapeHtml(j.label)}</h2><span class="sub">Entregadas: ${done}/${state.players.length}</span></div>
+        <div class="section-head"><h2>Alineación · ${escapeHtml(p.name)}</h2><span class="sub">Completas: ${done}/${state.players.length}</span></div>
         ${banner}
         ${loginHint}
-        ${lineupUsesFormation(j)
-          ? `<div class="lu-grid fm-grid">${order.map(p => formationCardHtml(j, p, dl, past)).join("")}</div>`
-          : `<div class="lu-grid">${order.map(p => lineupCardHtml(j, p, dl, past)).join("")}</div>`}
+        <div class="fm-one">${formationCardHtml(p, lock)}</div>
       </div>`;
     return { tabs, body };
   }
-  function lineupCardHtml(j, p, dl, past) {
-    const l = lineupOf(j.id, p.id);
-    const key = j.id + ":" + p.id;
-    const draft = luDrafts[key] || {};
-    const complete = !!(l && l.submitted_at);
-    const partial = !!(l && !complete && (l.code || l.code_path || l.starters_path || l.bench_path));
-    const codeImg = lineupCodeIsImage(j);
-    let status;
-    if (complete && l.late) status = `<span class="lu-status late">⏰ Entregada tarde</span>`;
-    else if (complete) status = `<span class="lu-status ok">✅ Entregada</span>`;
-    else if (past) status = `<span class="lu-status missing">${partial ? "⚠️ Incompleta" : "❌ Sin entregar"}</span>`;
-    else status = `<span class="lu-status">${partial ? "🟡 Incompleta" : "⏳ Pendiente"}</span>`;
-    const when = complete ? `<div class="lu-when">Entregada el ${escapeHtml(formatStamp(l.submitted_at))}</div>` : "";
-
-    const mine = myPlayerIds.includes(p.id);
-    const canEdit = canEditLineup(p.id);
-    const locked = canEdit && !isAdmin && past && complete;
-    const editing = canEdit && !locked;
-
-    const img = (kind, label, cls) => {
-      const pend = draft[kind];
-      const url = pend ? pend.url : lineupImgUrl(l && l[kind + "_path"]);
-      const inner = url ? `<img src="${escapeHtml(url)}" alt="${label} de ${escapeHtml(p.name)}" loading="lazy">` : "Sin imagen";
-      const frame = url && !pend
-        ? `<a class="frame" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Ver en grande">${inner}</a>`
-        : `<div class="frame ${pend ? "pending-img" : ""}">${inner}</div>`;
-      return `<figure class="lu-img ${cls || ""}"><figcaption>${label}${pend ? " · sin guardar" : ""}</figcaption>${frame}</figure>`;
-    };
-    const codeView = !codeImg && l && l.code
-      ? `<div class="lu-code"><code>${escapeHtml(l.code)}</code><button class="mini-btn" data-action="copy-lu-code" data-code="${escapeHtml(l.code)}">Copiar</button></div>`
-      : "";
-
-    let form = "";
-    if (editing) {
-      const saving = luSaving === key;
-      const codeVal = draft.codeTxt !== undefined ? draft.codeTxt : (l && l.code) || "";
-      const dirty = draft.codeTxt !== undefined || draft.code || draft.starters || draft.bench;
-      form = `
-        <div class="lu-form">
-          ${codeImg ? "" : `<input class="text-input lu-code-input" id="lu-code-${p.id}" data-key="${key}" type="text" placeholder="Código de alineación" value="${escapeHtml(codeVal)}" autocomplete="off">`}
-          <div class="lu-files ${codeImg ? "three" : ""}">
-            <label class="btn-secondary lu-file">🖼️ Titulares<input type="file" accept="image/*" data-lu-file="starters" data-key="${key}"></label>
-            <label class="btn-secondary lu-file">🪑 Banca<input type="file" accept="image/*" data-lu-file="bench" data-key="${key}"></label>
-            ${codeImg ? `<label class="btn-secondary lu-file">🔢 Código<input type="file" accept="image/*" data-lu-file="code" data-key="${key}"></label>` : ""}
-          </div>
-          ${past && !complete && !isAdmin ? `<p class="lu-note warn">El plazo ya cerró: tu alineación quedará marcada como tarde.</p>` : ""}
-          ${!past && complete && !isAdmin ? `<p class="lu-note">Puedes cambiarla hasta el martes a las 11:59 pm.</p>` : ""}
-          <button class="btn-primary" data-action="save-lineup" data-j="${j.id}" data-p="${p.id}" ${saving || !dirty ? "disabled" : ""}>${saving ? "Guardando…" : "Guardar alineación"}</button>
-        </div>`;
-    } else if (locked) {
-      form = `<p class="lu-note">🔒 El plazo cerró; tu alineación ya no se puede cambiar.</p>`;
-    }
-    return `
-      <div class="card lu-card ${mine ? "mine" : ""}">
-        <div class="lu-head"><h3>${escapeHtml(p.name)}${mine ? ` <span class="muted" style="font-size:13px; font-family:var(--font-body)">(tú)</span>` : ""}</h3>${status}</div>
-        ${when}
-        ${codeView}
-        <div class="lu-imgs">${img("starters", "Titulares")}${img("bench", "Banca")}${codeImg ? img("code", "Código", "code") : ""}</div>
-        ${form}
-      </div>`;
-  }
 
   /* ============================== alineación con formación ============================== */
-  // Desde la J3 del Torneo FC27 (y desde la J1 en torneos nuevos) la alineación se arma aquí:
-  // formación + 11 titulares + 3 de banca (solo con jugadores del propio equipo) + imagen
-  // del código. Todos la ven; solo su dueño la edita. La base aplica las mismas reglas.
+  // Cada player tiene una alineación vigente (season_lineups) que actualiza al comprar o vender:
+  // formación + 11 titulares + 3 de banca (solo de su propio equipo) + imagen del código.
+  // Todos la ven; solo su dueño la edita. Se cierra desde el plazo de alineación de una Jornada
+  // hasta que termina el día de esa Jornada. La base aplica las mismas reglas.
   function lineupUsesFormation(j) {
     if (!j || j.jornada_number < 1) return false;
     return !(j.jornada_number <= 2 && LINEUP_TEXT_CODE_J1_SEASONS.includes(state.season && state.season.id));
@@ -4051,18 +3983,28 @@
     if (w.length >= 4) return w[0];
     return w[1].length > 3 ? w[1] : w[2];
   }
+  function seasonLineupOf(playerId) {
+    return (state.seasonLineups || []).find(l => l.player_id === playerId) || null;
+  }
+  // ¿Está cerrada? (venció el plazo de una Jornada y no termina su día). También: la próxima a cerrar.
+  function lineupLock(now) {
+    now = now || Date.now();
+    const js = state.jornadas.filter(j => j.playDate && lineupUsesFormation(j));
+    for (const j of js) {
+      const dl = lineupDeadline(j.playDate, j.id);
+      if (now >= dl.getTime() && now < cdmxAt(j.playDate, 1, 0)) return { locked: true, j, dl };
+    }
+    const next = js.find(j => now < lineupDeadline(j.playDate, j.id).getTime()) || null;
+    return { locked: false, next, nextDl: next ? lineupDeadline(next.playDate, next.id) : null };
+  }
   // Estado local de la alineación (lo guardado, o vacío). Lo vendido ya no aparece.
-  function fmLineup(j, playerId) {
-    const l = lineupOf(j.id, playerId) || {};
+  function fmLineup(playerId) {
+    const l = seasonLineupOf(playerId) || {};
     const own = new Set(squadCards(playerId).map(c => c.id));
     const fix = (arr, n) => Array.from({ length: n }, (_, i) => (arr && own.has(arr[i]) ? arr[i] : null));
     return { formation: fmByName(l.formation) ? l.formation : DEFAULT_FORMATION, chosen: !!l.formation, slots: fix(l.slots, 11), bench: fix(l.bench, BENCH_SIZE), code_path: l.code_path || null, l };
   }
-  function canEditFormation(j, playerId, past) {
-    const l = lineupOf(j.id, playerId);
-    return myPlayerIds.includes(playerId) && !(past && l && l.submitted_at);
-  }
-  function fmSlotHtml(j, p, card, label, idx, kind, editable, x, y) {
+  function fmSlotHtml(p, card, label, idx, kind, editable, x, y) {
     // Margen arriba y abajo para que el nombre del portero y de los delanteros no se corte.
     const pos = x != null ? `style="left:${x}%;top:${(4 + y * 0.88).toFixed(1)}%"` : "";
     const off = card && kind === "slot" && !cardFits(card, label);
@@ -4073,36 +4015,33 @@
       <span class="fm-name">${off ? `<b class="fm-warn" aria-label="fuera de su posición">!</b>` : ""}${card ? escapeHtml(shortCardName(card.name)) : escapeHtml(label)}</span>
       ${card ? `<span class="fm-rat">${card.rat} · ${escapeHtml(label)}</span>` : ""}`;
     return editable
-      ? `<button class="fm-slot" ${pos} data-action="fm-pick" data-j="${j.id}" data-p="${p.id}" data-kind="${kind}" data-i="${idx}" title="${off ? escapeHtml(card.name + " juega fuera de su posición") : ""}">${inner}</button>`
+      ? `<button class="fm-slot" ${pos} data-action="fm-pick" data-p="${p.id}" data-kind="${kind}" data-i="${idx}" title="${off ? escapeHtml(card.name + " juega fuera de su posición") : ""}">${inner}</button>`
       : `<div class="fm-slot" ${pos}>${inner}</div>`;
   }
-  function formationCardHtml(j, p, dl, past) {
-    const st = fmLineup(j, p.id), l = st.l;
+  function formationCardHtml(p, lock) {
+    const st = fmLineup(p.id), l = st.l;
     const fm = fmByName(st.formation);
     const mine = myPlayerIds.includes(p.id);
-    const editable = canEditFormation(j, p.id, past);
+    const editable = mine && !lock.locked;
     const cards = Object.fromEntries(squadCards(p.id).map(c => [c.id, c]));
-    const complete = !!l.submitted_at;
+    const complete = !!l.complete;
     const filled = st.slots.filter(Boolean).length + st.bench.filter(Boolean).length;
-    let status;
-    if (complete && l.late) status = `<span class="lu-status late">⏰ Entregada tarde</span>`;
-    else if (complete) status = `<span class="lu-status ok">✅ Entregada</span>`;
-    else if (past) status = `<span class="lu-status missing">${filled || st.code_path ? "⚠️ Incompleta" : "❌ Sin entregar"}</span>`;
-    else status = `<span class="lu-status">${filled || st.code_path ? "🟡 Incompleta" : "⏳ Pendiente"}</span>`;
+    const status = complete ? `<span class="lu-status ok">✅ Completa</span>`
+      : `<span class="lu-status ${lock.locked ? "missing" : ""}">${filled || st.code_path ? "🟡 Incompleta" : "⏳ Sin armar"}</span>`;
     const missing = [];
     if (!st.chosen) missing.push("formación");
     if (st.slots.some(x => !x)) missing.push((11 - st.slots.filter(Boolean).length) + " titular(es)");
     if (st.bench.some(x => !x)) missing.push((BENCH_SIZE - st.bench.filter(Boolean).length) + " de banca");
     if (!st.code_path) missing.push("código");
     const codeUrl = lineupImgUrl(st.code_path);
-    const pending = fmUploading === j.id + ":" + p.id;
+    const pending = fmUploading === p.id;
     return `
       <div class="card lu-card fm-card ${mine ? "mine" : ""}">
         <div class="lu-head"><h3>${escapeHtml(p.name)}${mine ? ` <span class="muted" style="font-size:13px; font-family:var(--font-body)">(tú)</span>` : ""}</h3>${status}</div>
-        ${complete ? `<div class="lu-when">Entregada el ${escapeHtml(formatStamp(l.submitted_at))}</div>` : ""}
+        ${l.updated_at ? `<div class="lu-when">Último cambio: ${escapeHtml(formatStamp(l.updated_at))}</div>` : ""}
         <div class="fm-top">
           ${editable
-            ? `<select class="text-input fm-select" data-j="${j.id}" data-p="${p.id}">${FORMATIONS.map(f => `<option value="${escapeHtml(f.name)}" ${f.name === st.formation ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}</select>`
+            ? `<select class="text-input fm-select" data-p="${p.id}">${FORMATIONS.map(f => `<option value="${escapeHtml(f.name)}" ${f.name === st.formation ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}</select>`
             : `<span class="fm-name-tag">${st.chosen ? escapeHtml(st.formation) : "Sin formación"}</span>`}
           ${coachShieldHtml(p.id, 54)}
         </div>
@@ -4112,14 +4051,14 @@
             <circle cx="34" cy="1" r="9" fill="none"/><rect x="14" y="62" width="40" height="17" fill="none"/><rect x="25" y="73" width="18" height="6" fill="none"/>
             <rect x="14" y="1" width="40" height="17" fill="none"/><rect x="25" y="1" width="18" height="6" fill="none"/>
           </svg>
-          ${fm.slots.map((s, i) => fmSlotHtml(j, p, cards[st.slots[i]], s.p, i, "slot", editable, s.x, s.y)).join("")}
+          ${fm.slots.map((s, i) => fmSlotHtml(p, cards[st.slots[i]], s.p, i, "slot", editable, s.x, s.y)).join("")}
         </div>
-        <div class="fm-bench"><span class="fm-bench-lbl">Banca</span>${st.bench.map((id, i) => fmSlotHtml(j, p, cards[id], "SUP", i, "bench", editable)).join("")}</div>
+        <div class="fm-bench"><span class="fm-bench-lbl">Banca</span>${st.bench.map((id, i) => fmSlotHtml(p, cards[id], "SUP", i, "bench", editable)).join("")}</div>
         <figure class="lu-img code"><figcaption>Código</figcaption>${codeUrl ? `<a class="frame" href="${escapeHtml(codeUrl)}" target="_blank" rel="noopener">${`<img src="${escapeHtml(codeUrl)}" alt="Código de ${escapeHtml(p.name)}" loading="lazy">`}</a>` : `<div class="frame">Sin imagen</div>`}</figure>
-        ${editable ? `<label class="btn-secondary lu-file">${pending ? "Subiendo…" : st.code_path ? "🔢 Cambiar imagen del código" : "🔢 Subir imagen del código"}<input type="file" accept="image/*" data-fm-code="${j.id}:${p.id}" ${pending ? "disabled" : ""}></label>` : ""}
+        ${editable ? `<label class="btn-secondary lu-file">${pending ? "Subiendo…" : st.code_path ? "🔢 Cambiar imagen del código" : "🔢 Subir imagen del código"}<input type="file" accept="image/*" data-fm-code="${p.id}" ${pending ? "disabled" : ""}></label>` : ""}
         ${editable && missing.length ? `<p class="lu-note warn">Falta: ${escapeHtml(missing.join(", "))}.</p>` : ""}
-        ${editable && !past && complete ? `<p class="lu-note">Se guarda sola. Puedes cambiarla hasta el ${escapeHtml(formatDeadline(dl))}.</p>` : ""}
-        ${mine && !editable ? `<p class="lu-note">🔒 El plazo cerró; tu alineación ya no se puede cambiar.</p>` : ""}
+        ${editable ? `<p class="lu-note">Se guarda sola. Actualízala cada vez que compres o vendas${lock.next ? "; para la " + escapeHtml(lock.next.label) + " cierra el " + escapeHtml(formatDeadline(lock.nextDl)) : "."}</p>` : ""}
+        ${mine && lock.locked ? `<p class="lu-note">🔒 Cerrada hasta que termine la ${escapeHtml(lock.j.label)}.</p>` : ""}
       </div>`;
   }
 
@@ -4138,31 +4077,28 @@
     return out;
   }
   let fmUploading = null;
-  async function saveFormation(j, playerId, patch) {
-    const st = fmLineup(j, playerId);
-    const row = { season_id: state.season.id, jornada_id: j.id, player_id: playerId, formation: st.formation, slots: st.slots, bench: st.bench, ...patch };
+  async function saveFormation(playerId, patch) {
+    const st = fmLineup(playerId);
+    const row = { season_id: state.season.id, player_id: playerId, formation: st.formation, slots: st.slots, bench: st.bench, code_path: st.code_path, ...patch };
     // Se ve al instante; si la base lo rechaza, se recarga lo guardado.
-    const l = lineupOf(j.id, playerId);
-    if (l) Object.assign(l, patch, { formation: row.formation }); else state.lineups.push({ ...row });
+    const l = seasonLineupOf(playerId);
+    if (l) Object.assign(l, patch, { formation: row.formation }); else state.seasonLineups.push({ ...row });
     render();
-    const { error } = await sb.from("lineups").upsert(row, { onConflict: "jornada_id,player_id" });
-    if (error) showToast(/plazo/i.test(error.message || "") ? "El plazo ya cerró: tu alineación ya no se puede cambiar." : /equipo|repetido/i.test(error.message || "") ? error.message : "No se pudo guardar la alineación.");
+    const { error } = await sb.from("season_lineups").upsert(row, { onConflict: "season_id,player_id" });
+    if (error) showToast(/cerrada/i.test(error.message || "") ? "La alineación está cerrada hasta que se juegue la Jornada." : /equipo|repetido/i.test(error.message || "") ? error.message : "No se pudo guardar la alineación.");
     await loadSeasonData(); render();
   }
-  function changeFormation(jid, pid, name) {
-    const j = state.jornadas.find(x => x.id === jid);
-    if (!j || !fmByName(name) || staleBlocked()) return;
-    const st = fmLineup(j, pid);
+  function changeFormation(pid, name) {
+    if (!fmByName(name) || staleBlocked()) return;
+    const st = fmLineup(pid);
     const cards = Object.fromEntries(squadCards(pid).map(c => [c.id, c]));
-    saveFormation(j, pid, { formation: name, slots: refitSlots(fmByName(st.formation), fmByName(name), st.slots, cards) });
+    saveFormation(pid, { formation: name, slots: refitSlots(fmByName(st.formation), fmByName(name), st.slots, cards) });
   }
   // Selector de jugador para un lugar: primero los de esa posición, luego el resto por RAT.
-  let fmPick = null; // { jid, pid, kind, i }
+  let fmPick = null; // { pid, kind, i }
   function fmPickModalHtml() {
     if (!fmPick) return "";
-    const j = state.jornadas.find(x => x.id === fmPick.jid);
-    if (!j) return "";
-    const st = fmLineup(j, fmPick.pid);
+    const st = fmLineup(fmPick.pid);
     const label = fmPick.kind === "slot" ? fmByName(st.formation).slots[fmPick.i].p : "SUP";
     const cur = (fmPick.kind === "slot" ? st.slots : st.bench)[fmPick.i];
     const where = {};
@@ -4185,9 +4121,8 @@
   }
   function fmSet(cardStr) {
     const pk = fmPick; fmPick = null;
-    const j = pk && state.jornadas.find(x => x.id === pk.jid);
-    if (!j) { render(); return; }
-    const st = fmLineup(j, pk.pid);
+    if (!pk) { render(); return; }
+    const st = fmLineup(pk.pid);
     const card = cardStr ? Number(cardStr) : null;
     const slots = st.slots.slice(), bench = st.bench.slice();
     const target = pk.kind === "slot" ? slots : bench;
@@ -4198,23 +4133,22 @@
       if (si >= 0) slots[si] = prev; else if (bi >= 0) bench[bi] = prev;
     }
     target[pk.i] = card;
-    saveFormation(j, pk.pid, { formation: st.formation, slots, bench });
+    saveFormation(pk.pid, { formation: st.formation, slots, bench });
   }
   async function uploadFormationCode(input) {
     const file = input.files && input.files[0];
-    const [jid, pid] = String(input.dataset.fmCode || "").split(":");
-    const j = state.jornadas.find(x => x.id === jid);
-    if (!file || !j || !myPlayerIds.includes(pid)) return;
+    const pid = input.dataset.fmCode;
+    if (!file || !myPlayerIds.includes(pid)) return;
     if (!/^image\//.test(file.type)) { showToast("Elige una imagen."); return; }
-    fmUploading = jid + ":" + pid; render();
+    fmUploading = pid; render();
     try {
       const blob = await compressImage(file);
       const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
-      const path = `${state.season.id}/${jid}/${pid}/code-${Date.now()}.${ext}`;
+      const path = `${state.season.id}/actual/${pid}/code-${Date.now()}.${ext}`;
       const { error } = await sb.storage.from("lineups").upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: false });
       if (error) throw new Error("No se pudo subir la imagen del código.");
       fmUploading = null;
-      await saveFormation(j, pid, { code_path: path });
+      await saveFormation(pid, { code_path: path });
     } catch (e) {
       fmUploading = null; render();
       showToast(e.message || "No se pudo subir la imagen del código.");
@@ -4367,66 +4301,6 @@
       im.src = url;
     });
   }
-  function pickLineupFile(input) {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { showToast("Elige una imagen."); return; }
-    const key = input.dataset.key, kind = input.dataset.luFile;
-    const d = luDrafts[key] = luDrafts[key] || {};
-    if (d[kind]) URL.revokeObjectURL(d[kind].url);
-    d[kind] = { file, url: URL.createObjectURL(file) };
-    render();
-  }
-  async function saveLineup(jornadaId, playerId) {
-    if (!canEditLineup(playerId)) return;
-    const key = jornadaId + ":" + playerId;
-    const d = luDrafts[key] || {};
-    const l = lineupOf(jornadaId, playerId);
-    const codeImg = lineupCodeIsImage(state.jornadas.find(x => x.id === jornadaId));
-    luSaving = key; render();
-    try {
-      const row = {
-        season_id: state.season.id, jornada_id: jornadaId, player_id: playerId,
-        code: codeImg ? null : d.codeTxt !== undefined ? (d.codeTxt.trim() || null) : (l ? l.code : null),
-        code_path: codeImg && l ? l.code_path || null : null,
-        starters_path: l ? l.starters_path : null,
-        bench_path: l ? l.bench_path : null
-      };
-      for (const kind of ["code", "starters", "bench"]) {
-        if (!d[kind]) continue;
-        const blob = await compressImage(d[kind].file);
-        const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
-        const path = `${state.season.id}/${jornadaId}/${playerId}/${kind}-${Date.now()}.${ext}`;
-        const { error } = await sb.storage.from("lineups").upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: false });
-        if (error) throw new Error("No se pudo subir la imagen (" + ({ code: "código", starters: "titulares", bench: "banca" })[kind] + ").");
-        row[kind + "_path"] = path;
-      }
-      const { error } = await sb.from("lineups").upsert(row, { onConflict: "jornada_id,player_id" });
-      if (error) throw new Error(/plazo/i.test(error.message || "") ? "El plazo ya cerró: tu alineación ya no se puede cambiar." : "No se pudo guardar la alineación.");
-      ["code", "starters", "bench"].forEach(k => { if (d[k]) URL.revokeObjectURL(d[k].url); });
-      delete luDrafts[key];
-      await loadSeasonData();
-      const saved = lineupOf(jornadaId, playerId);
-      const missing = [];
-      if (codeImg ? !row.code_path : !row.code) missing.push("código");
-      if (!row.starters_path) missing.push("titulares");
-      if (!row.bench_path) missing.push("banca");
-      luSaving = null;
-      render();
-      if (missing.length) showToast("Guardado. Falta: " + missing.join(", ") + ".");
-      else showToast(saved && saved.late ? "Alineación guardada (marcada como tarde)." : "Alineación guardada ✅");
-    } catch (e) {
-      luSaving = null;
-      render();
-      showToast(e.message || "No se pudo guardar la alineación.");
-    }
-  }
-  function copyLineupCode(code) {
-    const done = () => showToast("Código copiado.");
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(done, () => showToast(code));
-    else showToast(code);
-  }
-
   // Admin: ligar el correo de cada player (la cuenta se crea en Supabase → Authentication).
   function renderAccounts() {
     const rows = state.players.map(p => {
@@ -5596,10 +5470,8 @@
       case "set-stats-tab": statsTab = el.dataset.tab; render(); break;
       case "set-stats-filter": statsFilter = el.dataset.f; render(); break;
       case "set-lu-tab": luTab = el.dataset.tab; render(); break;
-      case "save-lineup": saveLineup(el.dataset.j, el.dataset.p); break;
-      case "copy-lu-code": copyLineupCode(el.dataset.code); break;
       case "open-dedulce": openDedulce(); break;
-      case "fm-pick": fmPick = { jid: el.dataset.j, pid: el.dataset.p, kind: el.dataset.kind, i: Number(el.dataset.i) }; render(); break;
+      case "fm-pick": fmPick = { pid: el.dataset.p, kind: el.dataset.kind, i: Number(el.dataset.i) }; render(); break;
       case "fm-set": fmSet(el.dataset.card); break;
       case "fm-close": fmPick = null; render(); break;
       case "coach-save": saveCoach(); break;
@@ -5645,14 +5517,6 @@
   });
   let marketSearchTimer = null;
   document.addEventListener("input", (e) => {
-    if (e.target.classList && e.target.classList.contains("lu-code-input")) {
-      const key = e.target.dataset.key;
-      const d = luDrafts[key] = luDrafts[key] || {};
-      const had = d.codeTxt !== undefined;
-      d.codeTxt = e.target.value;
-      if (!had) { const btn = e.target.closest(".lu-form").querySelector("[data-action=save-lineup]"); if (btn && luSaving !== key) btn.disabled = false; }
-      return;
-    }
     if (e.target.classList && e.target.classList.contains("acc-input")) { accDrafts[e.target.dataset.p] = e.target.value; return; }
     if (e.target.id === "pen-note") { penForm.note = e.target.value; return; }
     if (e.target.classList && e.target.classList.contains("team-name-input")) { teamNameDraft[e.target.dataset.p] = e.target.value; return; }
@@ -5664,13 +5528,12 @@
   document.addEventListener("change", (e) => {
     const t = e.target;
     if (t.classList && t.classList.contains("pos-cb")) { toggleMarketPos(t.dataset.pos, t.checked); return; }
-    if (t.classList && t.classList.contains("fm-select")) { changeFormation(t.dataset.j, t.dataset.p, t.value); return; }
+    if (t.classList && t.classList.contains("fm-select")) { changeFormation(t.dataset.p, t.value); return; }
     if (t.dataset && t.dataset.fmCode) { if (staleBlocked()) { render(); return; } uploadFormationCode(t); return; }
     if (t.dataset && t.dataset.coachFile) { if (staleBlocked()) { render(); return; } pickCoachFile(t); return; }
-    if (t.dataset && (t.dataset.luFile || t.dataset.logoFile) || (t.classList && (t.classList.contains("console-select") || t.classList.contains("jdate-input") || t.classList.contains("magna-select")))) {
+    if (t.dataset && t.dataset.logoFile || (t.classList && (t.classList.contains("console-select") || t.classList.contains("jdate-input") || t.classList.contains("magna-select")))) {
       if (staleBlocked()) { render(); return; }
     }
-    if (e.target.dataset && e.target.dataset.luFile) { pickLineupFile(e.target); return; }
     if (e.target.dataset && e.target.dataset.logoFile) { uploadLogo(e.target); return; }
     if (e.target.classList && e.target.classList.contains("console-select")) { setJornadaConsole(e.target.dataset.j, e.target.dataset.col, e.target.value); return; }
     if (e.target.classList && e.target.classList.contains("jdate-input")) { setJornadaDate(e.target.dataset.j, e.target.value); return; }
