@@ -489,6 +489,10 @@
   .lu-img.code { grid-column: 1 / -1; }
   /* Alineación con formación */
   .fm-one { max-width: 520px; }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); margin: 4px 0 14px; }
+  .seg-btn { border: 0; background: none; color: var(--text-muted); font: inherit; font-weight: 700; font-size: 14px; padding: 8px 18px; border-radius: 9px; cursor: pointer; }
+  .seg-btn.on { background: var(--accent); color: var(--accent-ink); }
+  .lu-done { margin: 0 0 10px; color: var(--text-muted); font-size: 13px; }
   .fm-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .fm-select { flex: 0 1 180px; }
   .fm-name-tag { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
@@ -778,7 +782,6 @@
   let sessionEmail = "";
   let myPlayerIds = [];       // players ligados al correo de la sesión
   let playerAccounts = [];    // correos ligados (el admin ve todos; un player, el suyo)
-  let luTab = null;           // pestaña del módulo Alineaciones
   let accDrafts = {};
   let statsTab = "general";   // "general" | "resumen" | "h2h" | "recompensas" | "palmares"
   let magnaDraft = null;      // selección de la Final Magna aún sin guardar
@@ -795,10 +798,12 @@
   // ?j=J1 (desde una notificación): abre Torneo directo en esa Jornada.
   const urlJornada = (() => { try { return new URLSearchParams(location.search).get("j"); } catch (e) { return null; } })();
   if (urlJornada) activeTab = urlJornada;
-  let activeModule = urlModule || "torneo";
+  // Las ligas viejas a Alineaciones (avisos) abren Equipos → Alineación.
+  let activeModule = urlModule === "alineaciones" ? "equipos" : urlModule || "torneo";
   let startModulePicked = !!urlModule;
   let navOpen = false;
   let teamsTab = null;
+  let teamView = "alineacion"; // pestaña dentro de Equipos: "alineacion" | "plantilla"
   let market = null;          // jugadores del mercado (market.json)
   let marketLoading = false;
   let marketError = false;
@@ -1427,7 +1432,7 @@
     await startSession();
     if (isAdmin) showToast("Sesión de admin iniciada. Ya puedes editar.");
     else if (myPlayerIds.length) {
-      showToast("Sesión iniciada como " + myPlayerIds.map(playerNameSafe).join(", ") + ". Sube tu alineación en 📋 Alineaciones.");
+      showToast("Sesión iniciada como " + myPlayerIds.map(playerNameSafe).join(", ") + ". Arma tu alineación en 👕 Equipos.");
     } else showToast("Sesión iniciada.");
   }
   function playerNameSafe(id) {
@@ -2780,8 +2785,8 @@
         <p><strong>Ventas:</strong> al vender un jugador se recupera el 97% de lo que se pagó y el jugador regresa al Mercado. Durante un Draft solo se puede vender en el propio turno (vender no consume el turno); con el Mercado abierto, en cualquier momento. Con el Mercado cerrado no se compra ni se vende.</p>
         <p><strong>Quién registra:</strong> cada player compra, vende y pasa su turno desde su cuenta, solo en su propio equipo: en el Draft, en su turno compra 1 jugador (o pasa); con el Mercado abierto, lo que quiera mientras tenga saldo y lugar en la plantilla. El admin puede registrar movimientos por cualquiera y deshacer compras capturadas por error.</p>
         <h4>Alineaciones</h4>
-        <p>Para cada Jornada de la J1 a la J11, cada player sube en 📋 Alineaciones la imagen de sus titulares, la de su banca y el código de su alineación. El límite es el <strong>martes a las 11:59 pm</strong> (hora del centro de México) inmediatamente anterior a la fecha de la Jornada; la J0 no lleva alineación.</p>
-        <p>Antes del límite se puede cambiar cuantas veces se quiera. Después del límite, quien ya la había entregado ya no puede cambiarla, y quien no la había entregado todavía puede subirla, pero queda marcada como <strong>tarde</strong>. Todos pueden ver las alineaciones de todos.</p>
+        <p>Cada player arma su alineación en 👕 Equipos → Alineación: formación, 11 titulares y 3 de banca (solo de su propio equipo) y la imagen del código. La actualiza cada vez que compra o vende; todos pueden ver la de todos, pero solo su dueño la edita.</p>
+        <p>Se cierra el <strong>martes a las 11:59 pm</strong> (hora del centro de México) inmediatamente anterior a la fecha de cada Jornada y se vuelve a abrir al terminar el día de esa Jornada. Quien al cierre no la tenga completa comete falta de alineación. La J0 no lleva alineación.</p>
         <h4>Penalizaciones</h4>
         <p>Hay tres tipos de falta y cada uno se cuenta por separado: <strong>consola desactualizada</strong> (quien lleva consola no tiene los equipos al día), <strong>alineación</strong> (no subirla completa a tiempo) e <strong>impuntualidad</strong> (llegar después de las 9:15 pm en horario nocturno o de las 5:15 pm en vespertino).</p>
         <p>Consola (no aplica en la J0, que se juega con los equipos estándar del FIFA): 1ª falta −2 pts y pierde su 1er turno del Draft; 2ª en adelante −3 pts y pierde sus 2 turnos. Alineación: la 1ª es tolerancia; 2ª −2 pts y 1 turno; 3ª en adelante −3 pts y 2 turnos. Impuntualidad: la 1ª y 2ª son tolerancia; 3ª −2 pts y 1 turno; 4ª en adelante −3 pts y 2 turnos.</p>
@@ -2803,7 +2808,7 @@
     <div class="modal-overlay">
       <div class="modal-box" data-stop-close>
         <h3>Iniciar sesión</h3>
-        <p>El admin captura resultados, asistencia, Liguilla, compras y temporadas. Cada player puede entrar con su correo para subir su alineación en 📋 Alineaciones. Para solo ver no hace falta iniciar sesión.</p>
+        <p>El admin captura resultados, asistencia, Liguilla, compras y temporadas. Cada player puede entrar con su correo para comprar, vender y armar su alineación en 👕 Equipos. Para solo ver no hace falta iniciar sesión.</p>
         <div class="name-row" style="margin-bottom:10px;">
           <input class="text-input" id="login-user" type="email" placeholder="Correo" autocomplete="username">
         </div>
@@ -2835,7 +2840,6 @@
     { id: "equipos", icon: "👕", label: "Equipos" },
     { id: "mercado", icon: "🛒", label: "Mercado" },
     { id: "transacciones", icon: "🧾", label: "Transacciones" },
-    { id: "alineaciones", icon: "📋", label: "Alineaciones" },
     { id: "estadisticas", icon: "📊", label: "Estadísticas" },
     { id: "penalizaciones", icon: "🚨", label: "Penalizaciones" },
     { id: "premios", icon: "💰", label: "Premios" },
@@ -2860,8 +2864,6 @@
       body = renderPenaltiesModule();
     } else if (activeModule === "estadisticas") {
       ({ tabs: topTabs, body } = renderStatsModule());
-    } else if (activeModule === "alineaciones") {
-      ({ tabs: topTabs, body } = renderLineupsModule());
     } else if (activeModule === "notificaciones") {
       body = pushStatusHtml();
     } else if (activeModule === "dedulce") {
@@ -2916,7 +2918,7 @@
   // Acciones que sí se permiten con datos de la última vez (solo navegar y ver).
   const STALE_OK = new Set(["close-buy", "close-end-ft", "close-help", "close-login", "close-nav", "close-pass", "close-sell", "close-start-initial",
     "hide-push-banner", "market-page", "market-page-to", "market-sort", "open-dedulce", "open-help", "open-nav", "fm-close", "coach-cancel", "retry-market",
-    "set-lu-tab", "set-module", "set-stats-filter", "set-stats-tab", "set-tab", "set-team-tab", "admin-logout"]);
+    "set-team-view", "set-module", "set-stats-filter", "set-stats-tab", "set-tab", "set-team-tab", "admin-logout"]);
   function staleBlocked() {
     if (!state || !state.stale) return false;
     showToast(state.offline ? "Sin conexión: no se pueden hacer cambios." : "Espera un momento: estoy actualizando los datos.");
@@ -3258,7 +3260,7 @@
           title: "🙋 Asistencia de la " + j.label, body: "Cerró la confirmación." });
         if (j.jornada_number >= 1) {
           const dl = lineupDeadline(pd, j.id).getTime();
-          [18, 22].forEach(h => rows.push({ key: prefix + "lu" + h, kind: "lineup_reminder", jornadaId: j.id, at: dl - (24 - h) * 3600 * 1000, url: "./?m=alineaciones",
+          [18, 22].forEach(h => rows.push({ key: prefix + "lu" + h, kind: "lineup_reminder", jornadaId: j.id, at: dl - (24 - h) * 3600 * 1000, url: "./?m=equipos",
             title: "📋 Sube tu alineación", body: "Hoy a las 11:59 pm vence el plazo para la " + j.label + ". Te faltan código, titulares o banca." }));
           // Falta automática al vencer el plazo: aviso personal con la penalización que tocaría.
           const pf = penaltyFaults();
@@ -3881,16 +3883,8 @@
   function lineupOf(jornadaId, playerId) {
     return (state.lineups || []).find(l => l.jornada_id === jornadaId && l.player_id === playerId) || null;
   }
-  // Módulo Alineaciones: una alineación vigente por player (pestañas = players).
-  function renderLineupsModule() {
-    loadMarket(); // fotos y posiciones de los jugadores
-    const validTabs = state.players.map(p => p.id).concat(isAdmin ? ["cuentas"] : []);
-    if (!luTab || !validTabs.includes(luTab)) luTab = (state.players.find(p => myPlayerIds.includes(p.id)) || state.players[0] || {}).id || null;
-    const order = state.players.slice().sort((a, b) => (myPlayerIds.includes(b.id) ? 1 : 0) - (myPlayerIds.includes(a.id) ? 1 : 0));
-    const tabs = order.map(p => `<button class="tab-btn ${luTab === p.id ? "active" : ""}" data-action="set-lu-tab" data-tab="${p.id}">${escapeHtml(p.name)}</button>`).join("") + (isAdmin ? `<button class="tab-btn ${luTab === "cuentas" ? "active" : ""}" data-action="set-lu-tab" data-tab="cuentas">🔑 Cuentas</button>` : "");
-    if (luTab === "cuentas") return { tabs, body: renderAccounts() };
-    const p = state.players.find(x => x.id === luTab);
-    if (!p) return { tabs, body: `<div class="empty-state">No hay players.</div>` };
+  // Equipos → Alineación: la alineación vigente del player elegido.
+  function lineupViewHtml(p) {
     const lock = lineupLock();
     const banner = lock.locked
       ? `<div class="draft-banner closed"><span class="draft-tag closed" style="border-radius:6px; padding:2px 8px; font-weight:700; font-size:12px;">CERRADA</span>
@@ -3903,14 +3897,11 @@
     const loginHint = !hasSession
       ? `<p class="lu-note" style="margin-bottom:12px;">¿Eres player? <a href="#" data-action="open-login" style="color:var(--accent)">Inicia sesión</a> para armar tu alineación.</p>`
       : (!isAdmin && !myPlayerIds.length ? `<p class="lu-note warn" style="margin-bottom:12px;">Tu correo no está ligado a ningún player; pídeselo al admin.</p>` : "");
-    const body = `
-      <div class="section">
-        <div class="section-head"><h2>Alineación · ${escapeHtml(p.name)}</h2><span class="sub">Completas: ${done}/${state.players.length}</span></div>
+    return `
+        <p class="sub lu-done">Alineaciones completas: ${done}/${state.players.length}</p>
         ${banner}
         ${loginHint}
-        <div class="fm-one">${formationCardHtml(p, lock)}</div>
-      </div>`;
-    return { tabs, body };
+        <div class="fm-one">${formationCardHtml(p, lock)}</div>`;
   }
 
   /* ============================== alineación con formación ============================== */
@@ -4781,15 +4772,24 @@
         ${off.length ? `<p class="qual-note">Quien no las recibe debe entrar a la app y tocar la campana 🔔.</p>` : ""}
       </div>`;
   }
+  // Equipos: pestañas por player y, dentro, Alineación y Plantilla. Los admins además ven 🔑 Cuentas.
   function renderTeamsModule() {
     loadMarket(); // para las fotos de los jugadores
     // Por default se abre el equipo propio (si la sesión está ligada a un player).
-    if (!teamsTab || !state.players.some(p => p.id === teamsTab)) {
+    if (!teamsTab || !(state.players.some(p => p.id === teamsTab) || (isAdmin && teamsTab === "cuentas"))) {
       const own = state.players.find(p => myPlayerIds.includes(p.id));
       teamsTab = (own || state.players[0] || {}).id || null;
     }
+    const tabs = state.players.map(p => `<button class="tab-btn ${teamsTab === p.id ? "active" : ""}" data-action="set-team-tab" data-team="${p.id}">${escapeHtml(p.name)}</button>`).join("")
+      + (isAdmin ? `<button class="tab-btn ${teamsTab === "cuentas" ? "active" : ""}" data-action="set-team-tab" data-team="cuentas">🔑 Cuentas</button>` : "");
+    if (teamsTab === "cuentas") return { tabs, body: renderAccounts() };
+    const p = state.players.find(x => x.id === teamsTab);
+    if (!p) return { tabs, body: `<div class="empty-state">No hay players.</div>` };
+    const views = [["alineacion", "Alineación"], ["plantilla", "Plantilla"]];
+    const head = `<div class="section-head team-head"><div class="team-title">${teamLogoHtml(teamsTab, 64)}<h2>${escapeHtml(p.name)}${p.team_name ? `<span class="team-sub">${escapeHtml(p.team_name)}</span>` : ""}</h2></div></div>
+        <div class="seg" role="tablist">${views.map(([id, label]) => `<button class="seg-btn ${teamView === id ? "on" : ""}" role="tab" aria-selected="${teamView === id}" data-action="set-team-view" data-view="${id}">${label}</button>`).join("")}</div>`;
+    if (teamView === "alineacion") return { tabs, body: `<div class="section">${head}${lineupViewHtml(p)}</div>` };
     const fin = teamFinances();
-    const tabs = state.players.map(p => `<button class="tab-btn ${teamsTab === p.id ? "active" : ""}" data-action="set-team-tab" data-team="${p.id}">${escapeHtml(p.name)}</button>`).join("");
     const f = fin[teamsTab];
     // Siempre de mayor a menor valor (empate: mayor RAT).
     const squad = (state.purchases || []).filter(pu => pu.player_id === teamsTab && !pu.sold_at)
@@ -4802,7 +4802,8 @@
     const avg = key => top.length ? (top.reduce((a, pu) => a + pu[key], 0) / top.length).toFixed(1) : "–";
     const body = `
       <div class="section">
-        <div class="section-head team-head"><div class="team-title">${teamLogoHtml(teamsTab, 64)}<h2>${escapeHtml(playerName(teamsTab))}${(tp => tp && tp.team_name ? `<span class="team-sub">${escapeHtml(tp.team_name)}</span>` : "")(state.players.find(x => x.id === teamsTab))}</h2></div><span class="sub">Jugadores: ${f.count}/${SQUAD_SIZE}</span></div>
+        ${head}
+        <p class="sub lu-done">Jugadores: ${f.count}/${SQUAD_SIZE}</p>
         ${isAdmin ? teamEditHtml(teamsTab) : ""}
         <div class="team-stats">
           <div class="stat-card card"><span class="lbl">Saldo</span><span class="lbl-sub">Disponible</span><span class="val saldo ${f.balance < 0 ? "neg" : ""}">${fcFormatted(f.balance)}</span></div>
@@ -5469,7 +5470,7 @@
       case "restore-penalty": deletePenaltyRow(el.dataset.id, null); break;
       case "set-stats-tab": statsTab = el.dataset.tab; render(); break;
       case "set-stats-filter": statsFilter = el.dataset.f; render(); break;
-      case "set-lu-tab": luTab = el.dataset.tab; render(); break;
+      case "set-team-view": teamView = el.dataset.view; render(); break;
       case "open-dedulce": openDedulce(); break;
       case "fm-pick": fmPick = { pid: el.dataset.p, kind: el.dataset.kind, i: Number(el.dataset.i) }; render(); break;
       case "fm-set": fmSet(el.dataset.card); break;
