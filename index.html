@@ -778,6 +778,7 @@
   let loginError = "";
   let activeTab = null;
   let isAdmin = false;
+  let canScore = false;       // admin o capturista de marcadores (score_keepers)
   let hasSession = false;
   let sessionEmail = "";
   let myPlayerIds = [];       // players ligados al correo de la sesión
@@ -1093,9 +1094,10 @@
     if (error) return null;
     if (!seasons || !seasons.length) return { season: null };
     const sid = seasons[0].id;
-    const [adm, accounts, players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs, season_lineups] = await Promise.all([
+    const [adm, accounts, canSc, players, jornadas, purchases, passes, lineups, draft_states, penalties, push_subs, season_lineups] = await Promise.all([
       Promise.resolve(sb.rpc("is_admin")).then(x => !!(x && x.data === true), () => false),
       rows(sb.from("player_accounts").select("*")),
+      Promise.resolve(sb.rpc("can_edit_scores")).then(x => !!(x && x.data === true), () => false),
       rows(sb.from("players").select("*").eq("season_id", sid).order("sort_order")),
       rows(sb.from("jornadas").select("*").eq("season_id", sid).order("jornada_number")),
       rows(sb.from("team_purchases").select("*").eq("season_id", sid).order("created_at")),
@@ -1112,12 +1114,13 @@
       rows(sb.from("matches").select("*").in("jornada_id", ids)),
       rows(sb.from("jornada_rsvps").select("*").in("jornada_id", ids))
     ]) : [[], [], []];
-    return { is_admin: adm, accounts, season: seasons[0], players, jornadas, purchases, passes, lineups, season_lineups, draft_states, penalties, push_subs, attendance, matches, rsvps };
+    return { is_admin: adm, can_score: canSc, accounts, season: seasons[0], players, jornadas, purchases, passes, lineups, season_lineups, draft_states, penalties, push_subs, attendance, matches, rsvps };
   }
   // Rol de la sesión a partir de lo que trae la carga.
   function applyRole(b) {
     if (!hasSession) return;
     isAdmin = b.is_admin === true;
+    canScore = isAdmin || b.can_score === true;
     playerAccounts = b.accounts || [];
     myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
   }
@@ -1318,7 +1321,7 @@
   }
 
   async function setGroupGoal(jornadaId, matchId, side, value) {
-    if (!isAdmin) return;
+    if (!canScore) return;
     const j = state.jornadas.find(x => x.id === jornadaId);
     const m = j.matches.find(x => x.id === matchId);
     if (!m) return;
@@ -1331,7 +1334,7 @@
   }
 
   async function setGroupShootout(jornadaId, matchId, winnerId) {
-    if (!isAdmin) return;
+    if (!canScore) return;
     const j = state.jornadas.find(x => x.id === jornadaId);
     const m = j.matches.find(x => x.id === matchId);
     if (!m) return;
@@ -1357,7 +1360,7 @@
   }
 
   async function setKOGoal(jornadaId, matchId, side, value) {
-    if (!isAdmin) return;
+    if (!canScore) return;
     const j = state.jornadas.find(x => x.id === jornadaId);
     const m = findKO(j, matchId);
     if (!m) return;
@@ -1371,7 +1374,7 @@
   }
 
   async function setKOShootout(jornadaId, matchId, winnerId) {
-    if (!isAdmin) return;
+    if (!canScore) return;
     const j = state.jornadas.find(x => x.id === jornadaId);
     const m = findKO(j, matchId);
     if (!m) return;
@@ -1383,7 +1386,7 @@
   }
 
   async function generateLiguilla(jornadaId) {
-    if (!isAdmin) return;
+    if (!canScore) return;
     const j = state.jornadas.find(x => x.id === jornadaId);
     buildPlayoff(j);
     await persistJornada(j);
@@ -1443,13 +1446,14 @@
   async function refreshRole(session) {
     hasSession = !!session;
     sessionEmail = session && session.user ? String(session.user.email || "").toLowerCase() : "";
-    if (!session) { isAdmin = false; myPlayerIds = []; playerAccounts = []; return; }
+    if (!session) { isAdmin = false; canScore = false; myPlayerIds = []; playerAccounts = []; return; }
     // Ambas consultas en paralelo.
     const [adm, acc] = await Promise.all([
       Promise.resolve(sb.rpc("is_admin")).then(r => r, () => ({ error: true })),
       Promise.resolve(sb.from("player_accounts").select("*")).then(r => r, () => ({ data: [] }))
     ]);
     isAdmin = adm && !adm.error && adm.data === true;
+    if (isAdmin) canScore = true;
     playerAccounts = (acc && acc.data) || [];
     myPlayerIds = playerAccounts.filter(a => String(a.email || "").toLowerCase() === sessionEmail).map(a => a.player_id);
   }
@@ -1493,7 +1497,7 @@
   function endSession() {
     unsubscribeRealtime();
     state = null; loading = false;
-    hasSession = false; isAdmin = false; myPlayerIds = []; playerAccounts = [];
+    hasSession = false; isAdmin = false; canScore = false; myPlayerIds = []; playerAccounts = [];
     accDrafts = {}; magnaDraft = null;
     render();
   }
@@ -1699,7 +1703,7 @@
   function scoreInputsHtml(m, onGoalAction, jornadaId) {
     const hv = m.homeGoals === null ? "" : m.homeGoals;
     const av = m.awayGoals === null ? "" : m.awayGoals;
-    const dis = isAdmin ? "" : "disabled";
+    const dis = canScore ? "" : "disabled";
     return `
       <div class="score-inputs">
         <input class="score-box" type="number" min="0" inputmode="numeric" value="${hv}" ${dis}
@@ -1717,7 +1721,7 @@
     const label = isKnockout
       ? "Empate — definición por penales, ¿quién avanza?"
       : "Empate — desempate \u201cLeagues Cup\u201d por penales, ¿quién gana la serie?";
-    const dis = isAdmin ? "" : "disabled";
+    const dis = canScore ? "" : "disabled";
     return `
       <div class="shootout-bar">
         <span class="label">${label}</span>
@@ -1858,7 +1862,7 @@
       <div class="section">
         <div class="section-head"><h2>Tabla de posiciones</h2></div>
         ${standingsTableHtml(standings, allPlayed ? qualifyCount : 0)}
-        ${allPlayed && !j.playoff && isAdmin ? `<div class="gen-btn-row"><button class="btn-primary" style="width:auto;" data-action="generate-liguilla" data-j="${j.id}">Generar Liguilla →</button></div>` : ""}
+        ${allPlayed && !j.playoff && canScore ? `<div class="gen-btn-row"><button class="btn-primary" style="width:auto;" data-action="generate-liguilla" data-j="${j.id}">Generar Liguilla →</button></div>` : ""}
         ${!allPlayed ? `<p class="qual-note">Captura todos los resultados para desbloquear la Liguilla.</p>` : ""}
       </div>
     `;
@@ -3107,7 +3111,8 @@
   // La primera vez en una temporada solo marca lo que ya pasó, sin avisar.
   let derivedBusy = false;
   async function emitDerivedNotifs() {
-    if (!isAdmin || !state || derivedBusy) return;
+    // También los emite un capturista: así salen aunque ningún admin tenga la app abierta.
+    if (!canScore || !state || derivedBusy) return;
     derivedBusy = true;
     try {
       const rows = [];
