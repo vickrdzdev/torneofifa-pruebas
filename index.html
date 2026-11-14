@@ -4780,7 +4780,9 @@
       const own = state.players.find(p => myPlayerIds.includes(p.id));
       teamsTab = (own || state.players[0] || {}).id || null;
     }
-    const tabs = state.players.map(p => `<button class="tab-btn ${teamsTab === p.id ? "active" : ""}" data-action="set-team-tab" data-team="${p.id}">${escapeHtml(p.name)}</button>`).join("")
+    // Tu equipo va primero; los demás en su orden de siempre.
+    const order = state.players.slice().sort((a, b) => (myPlayerIds.includes(b.id) ? 1 : 0) - (myPlayerIds.includes(a.id) ? 1 : 0));
+    const tabs = order.map(p => `<button class="tab-btn ${teamsTab === p.id ? "active" : ""}" data-action="set-team-tab" data-team="${p.id}">${escapeHtml(p.name)}</button>`).join("")
       + (isAdmin ? `<button class="tab-btn ${teamsTab === "cuentas" ? "active" : ""}" data-action="set-team-tab" data-team="cuentas">🔑 Cuentas</button>` : "");
     if (teamsTab === "cuentas") return { tabs, body: renderAccounts() };
     const p = state.players.find(x => x.id === teamsTab);
