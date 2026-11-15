@@ -1,0 +1,51 @@
+# Video "walkout" de una compra del Mercado abierto para el grupo de WhatsApp.
+# Lo dispara la base de datos (walkout_dispatch, ver supabase/sql/2026-11-15-walkout-video.sql)
+# con el id y el token de un solo uso del job. Graba walkout/render.html con
+# walkout/record.js y entrega el MP4 a la función walkout de Supabase, que lo manda.
+# Si algo falla, pide el plan B (el mensaje de antes con la foto).
+name: Video de compra (walkout)
+run-name: Walkout ${{ inputs.job }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: id del walkout_jobs
+        required: true
+      token:
+        description: token de un solo uso del job
+        required: true
+      api:
+        description: url de la función walkout
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      API: ${{ inputs.api }}
+      JOB: ${{ inputs.job }}
+      TOKEN: ${{ inputs.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            walkout
+            market.json
+          sparse-checkout-cone-mode: false
+      - name: Preparar navegador y ffmpeg
+        working-directory: walkout
+        run: |
+          npm init -y >/dev/null
+          npm i --no-audit --no-fund --loglevel=error playwright@1.63.0 ffmpeg-static@5.2.0
+          npx playwright install --with-deps --only-shell chromium
+          npx playwright install ffmpeg
+      - name: Grabar y enviar
+        run: node walkout/record.js
+      - name: Plan B (mensaje con foto)
+        if: failure()
+        run: curl -sS -X POST "$API?job=$JOB&token=$TOKEN&fail=1&why=workflow" -H "Content-Type: application/json" -d '{}'

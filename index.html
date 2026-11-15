@@ -5388,10 +5388,9 @@
       const info = m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price);
       const actor = notifActor(teamId);
       const wa = { whatsapp: true, waPhoto: cardImage(m.id) };
-      if (before.phase !== "draft") {
-        await queueNotifs([{ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · Mercado abierto", ...wa }]);
-        return;
-      }
+      // Con el Mercado abierto no hay aviso: la base de datos manda al grupo de WhatsApp
+      // el video de la compra (walkout_jobs + GitHub Actions; ver supabase/sql/2026-11-15-walkout-video.sql).
+      if (before.phase !== "draft") return;
       // En el draft, la compra y el cambio de turno van en un solo aviso.
       const after = draftSnapshot();
       const rows = [];
