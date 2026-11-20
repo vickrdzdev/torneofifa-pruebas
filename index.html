@@ -240,6 +240,7 @@
   /* ---------- shell con módulos ---------- */
   .shell { display: flex; min-height: 100vh; }
   .main { flex: 1; min-width: 0; }
+  .sidenav-ver { padding: 18px 12px 6px; font-size: 11.5px; color: var(--text-muted); opacity: .8; }
   .sidenav {
     width: 200px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto;
     background: var(--surface); border-right: 1px solid var(--line);
@@ -857,6 +858,8 @@
   let activeModule = urlModule === "alineaciones" ? "equipos" : urlModule || "torneo";
   let startModulePicked = !!urlModule;
   let navOpen = false;
+  // Versión de la app que se ve al final del menú (súbela en cada publicación para saber cuál tiene cada celular).
+  const APP_BUILD = "2026-11-20.9";
   let teamsTab = null;
   let teamView = "alineacion"; // pestaña dentro de Equipos: "alineacion" | "plantilla"
   let market = null;          // jugadores del mercado (market.json)
@@ -2955,6 +2958,7 @@
           <nav>
             ${visibleModules().map(m => `<button class="nav-item ${activeModule === m.id ? "active" : ""}" data-action="set-module" data-module="${m.id}"><span class="nav-ic">${m.icon}</span>${m.label}</button>`).join("")}
           </nav>
+          <div class="sidenav-ver">Versión ${APP_BUILD}</div>
         </aside>
         ${navOpen ? `<div class="nav-backdrop" data-action="close-nav"></div>` : ""}
         <div class="main">
@@ -4878,6 +4882,16 @@
         woPreloaded.set(u, i);
       });
   }
+  // Reporte para revisar desde la base cómo le fue a la animación en el celular (walkout_jobs.app_diag).
+  function woDiagSend(purchaseId, m) {
+    try {
+      const kind = u => /\/nation\//.test(u) ? "nacion" : /\/league\//.test(u) ? "liga" : /\/clubs\//.test(u) ? "club" : /\/players\//.test(u) ? "foto" : "escudo";
+      const imgs = [...woPreloaded].map(([u, i]) => kind(u) + ":" + (i.complete ? (i.naturalWidth > 0 ? "ok" : "falló") : "cargando"));
+      const info = "v" + APP_BUILD + " · market.img " + (market && market.img && market.img.nation ? "sí" : "NO") +
+        " · nation=" + m.nation + " league=" + m.league + " club=" + m.club + " · " + (imgs.join(" ") || "sin imágenes") + " · " + navigator.userAgent.slice(0, 90);
+      sb.rpc("walkout_diag", { p_purchase: purchaseId, p_info: info }).then(() => {}, () => {});
+    } catch (e) { /* solo diagnóstico */ }
+  }
   function walkout(m, teamId) {
     if (!m) return;
     woPreload(m, teamId);
@@ -5558,6 +5572,7 @@
     await loadSeasonData(); render();
     if (!error) {
       const pu = (state.purchases || []).filter(x => x.card_id === m.id && x.player_id === teamId && !x.sold_at).pop();
+      if (pu) setTimeout(() => woDiagSend(pu.id, m), 9500);
       const key = "buy:" + (pu ? pu.id : m.id + ":" + Date.now());
       const title = "💸 " + playerName(teamId) + " compró a " + m.name;
       const info = m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price);
