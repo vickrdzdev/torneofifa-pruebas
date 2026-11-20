@@ -4866,8 +4866,21 @@
     ? `<img class="${cls}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fb.replace(">", " hidden>")}`
     : fb;
   const woSide = x => `<div class="wo-tr-side">${woImgOr(x.logo, "wo-img", `<span class="wo-tr-ph">⚽</span>`)}${x.name ? `<span class="wo-tr-name">${escapeHtml(x.name)}</span>` : ""}</div>`;
+  // Descarga por adelantado las imágenes del walkout (al abrir la compra y al arrancar): cada paso dura
+  // ~1 s y, si la imagen se pidiera hasta que aparece, con datos móviles no alcanzaría a llegar.
+  const woPreloaded = new Map();
+  function woPreload(m, teamId) {
+    if (!m) return;
+    const o = woOrigin(m);
+    [m.photo ? PHOTO_BASE + m.photo : null, marketImg("nation", m.nation), marketImg("leagueMono", m.league), marketImg("club", m.club), o.logo, teamId ? teamLogoUrl(teamId) : null]
+      .filter(u => u && !woPreloaded.has(u)).forEach(u => {
+        const i = new Image(); i.referrerPolicy = "no-referrer"; i.src = u;
+        woPreloaded.set(u, i);
+      });
+  }
   function walkout(m, teamId) {
     if (!m) return;
+    woPreload(m, teamId);
     closeWalkout();
     const layer = document.createElement("div");
     layer.className = "wo-layer wo-" + woTier(m.rat);
@@ -5741,7 +5754,7 @@
       case "market-page": marketPage += parseInt(el.dataset.dir, 10); refreshMarketResults(); break;
       case "market-page-to": marketPage = el.dataset.page === "first" ? 0 : Number.MAX_SAFE_INTEGER; refreshMarketResults(); break;
       case "retry-market": marketError = false; loadMarket(); render(); break;
-      case "open-buy": buyCardId = parseInt(el.dataset.card, 10); buyTeamId = null; render(); break;
+      case "open-buy": buyCardId = parseInt(el.dataset.card, 10); buyTeamId = null; render(); try { woPreload(market && market.byId[buyCardId]); } catch (e) {} break;
       case "buy-pick-team": buyTeamId = el.dataset.team; render(); break;
       case "close-buy": buyCardId = null; buyTeamId = null; render(); break;
       case "confirm-buy": confirmPurchase(); break;
