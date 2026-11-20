@@ -48,6 +48,7 @@
   .wo-card-foot { font-size: 12.5px; font-weight: 700; opacity: .85; display: flex; align-items: center; justify-content: center; gap: 4px; }
   .wo-ok { width: auto; padding: 12px 34px; animation: wo-pop .5s .6s both; }
   .wo-layer [hidden] { display: none !important; }
+  .wo-fw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .wo-stars { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .wo-stars + .wo-stars { margin-top: 14px; }
   .wo-stars b { font-size: 44px; line-height: 1.1; letter-spacing: 4px; color: var(--wo2); text-shadow: 0 0 18px var(--wo1); }
@@ -99,6 +100,52 @@
     return window.WO_IMGS;
   })();
 
+  // Fuegos artificiales detrás de la tarjeta: un canvas con explosiones de partículas.
+  // scale: píxeles del canvas por píxel de pantalla. Devuelve una función para detenerlos.
+  // La misma función está en index.html y walkout/render.html.
+  function woFireworks(layer, scale) {
+    const cv = document.createElement("canvas");
+    cv.className = "wo-fw";
+    layer.insertBefore(cv, layer.querySelector(".wo-stage"));
+    const ctx = cv.getContext("2d");
+    const W = cv.width = Math.round(layer.clientWidth * scale), H = cv.height = Math.round(layer.clientHeight * scale);
+    const st = getComputedStyle(layer);
+    const cols = [st.getPropertyValue("--wo2").trim() || "#f5d27a", st.getPropertyValue("--wo1").trim() || "#c9893a", "#ffffff", "#ff6b6b", "#4fd1ff", "#7dff8a", "#ffd93d"];
+    let parts = [], next = 0, last = 0, raf = 0, alive = true;
+    const burst = () => {
+      // Alrededor de la tarjeta (arriba o a los lados), no detrás del centro.
+      const side = Math.random();
+      const x = side < 0.35 ? W * (0.08 + Math.random() * 0.22) : side < 0.7 ? W * (0.7 + Math.random() * 0.22) : W * (0.2 + Math.random() * 0.6);
+      const y = side < 0.7 ? H * (0.15 + Math.random() * 0.6) : H * (0.08 + Math.random() * 0.14);
+      const c = cols[Math.floor(Math.random() * cols.length)], n = 60 + Math.floor(Math.random() * 25), sp = (3.6 + Math.random() * 2.2) * scale;
+      for (let i = 0; i < n; i++) {
+        const ang = (i / n) * Math.PI * 2 + Math.random() * 0.2, v = sp * (0.6 + Math.random() * 0.5);
+        parts.push({ x, y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, life: 1, c, r: (2 + Math.random() * 1.6) * scale });
+      }
+    };
+    const loop = t => {
+      if (!alive) return;
+      const k = last ? Math.min(3, (t - last) / 16.7) : 1;
+      last = t;
+      if (t >= next) { burst(); if (!next) burst(); next = t + 300 + Math.random() * 300; }
+      ctx.clearRect(0, 0, W, H);
+      parts = parts.filter(p => p.life > 0);
+      for (const p of parts) {
+        p.vx *= Math.pow(0.97, k); p.vy = p.vy * Math.pow(0.97, k) + 0.05 * scale * k;
+        p.x += p.vx * k; p.y += p.vy * k; p.life -= 0.011 * k;
+        ctx.fillStyle = p.c;
+        ctx.globalAlpha = Math.max(0, p.life) * 0.25;  // brillo
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 2.6, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => { alive = false; cancelAnimationFrame(raf); cv.remove(); };
+  }
+
   window.WO_START = () => {
     const m = window.WO;
     const layer = document.createElement("div");
@@ -136,14 +183,15 @@
           <div class="wo-card-stats">${stats}</div>
           <div class="wo-card-foot">${esc(m.buyer)} · ϝ${fcNumber(m.price)}</div>
         </div>`;
+      woFireworks(layer, 2);  // la página se graba con zoom 2
     });
   };
 
   // Música de fondo sintetizada (sin archivos ni derechos): batucada a 124 bpm con surdo, caja,
-  // tamborim y agogó; silbatazos al arrancar y fanfarria de trompetas cuando aparece la tarjeta.
-  // a: AudioContext u OfflineAudioContext; out: nodo de salida; t0: inicio; len: segundos de batucada;
-  // cardAt: segundos (desde t0) de la fanfarria. La misma función está en index.html y walkout/render.html.
-  function woMusic(a, out, t0, len, cardAt) {
+  // tamborim y agogó, y silbatazos al arrancar (en la tarjeta suena el efecto "reveal").
+  // a: AudioContext u OfflineAudioContext; out: nodo de salida; t0: inicio; len: segundos de batucada.
+  // La misma función está en index.html y walkout/render.html.
+  function woMusic(a, out, t0, len) {
     const s16 = 60 / 124 / 4, end = t0 + len;
     const n = Math.floor(a.sampleRate * 0.5), nb = a.createBuffer(1, n, a.sampleRate), nd = nb.getChannelData(0);
     for (let i = 0; i < n; i++) nd[i] = Math.random() * 2 - 1;
@@ -165,13 +213,6 @@
       g.gain.setValueAtTime(0.07, t + dur - 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g).connect(out); o.start(t); lfo.start(t); o.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05);
     };
-    const brass = (t, f, dur, v) => {
-      const g = a.createGain(), fl = a.createBiquadFilter();
-      fl.type = "lowpass"; fl.Q.value = 2; fl.frequency.setValueAtTime(700, t); fl.frequency.linearRampToValueAtTime(3200, t + 0.06); fl.frequency.linearRampToValueAtTime(1800, t + dur);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.04); g.gain.setValueAtTime(v, t + dur - 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.1);
-      [-7, 7].forEach(det => { const o = a.createOscillator(); o.type = "sawtooth"; o.frequency.value = f; o.detune.value = det; o.connect(fl); o.start(t); o.stop(t + dur + 0.15); });
-      fl.connect(g).connect(out);
-    };
     for (let i = 0; t0 + i * s16 < end - 0.2; i++) {
       const t = t0 + i * s16, p = i % 8, q = i % 16;
       if (p === 0) osc("sine", 95, t, 0.3, 0.005, 0.3, 50);         // surdo de resposta
@@ -182,8 +223,6 @@
       if (q === 2 || q === 10 || q === 11) osc("triangle", 990, t, 0.05, 0.003, 0.16); // agogó grave
     }
     whistle(t0 + 0.05, 0.11); whistle(t0 + 0.24, 0.11); whistle(t0 + 0.43, 0.42);
-    const c = t0 + cardAt;
-    [[523.25, 0, 0.12], [659.25, 0.15, 0.12], [783.99, 0.3, 0.12], [1046.5, 0.45, 0.9]].forEach(([f, d, dur]) => brass(c + d, f, dur, 0.06));
   }
 
   // Sonido: los mismos efectos de la app, renderizados a WAV (base64) con OfflineAudioContext.
@@ -216,7 +255,7 @@
     snd("reveal", STEPS.card);
     const bus = a.createGain(); bus.connect(a.destination);
     bus.gain.setValueAtTime(0.7, 0); bus.gain.setValueAtTime(0.7, seconds - 1); bus.gain.linearRampToValueAtTime(0.0001, seconds - 0.1);  // se desvanece al final
-    woMusic(a, bus, 0.02, seconds - 0.1, STEPS.card - 0.02);
+    woMusic(a, bus, 0.02, seconds - 0.1);
     const d = (await a.startRendering()).getChannelData(0), n = d.length;
     const ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
     const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
