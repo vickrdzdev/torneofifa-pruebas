@@ -47,6 +47,10 @@
   .wo-stat b { font-family: var(--font-display); font-size: 19px; }
   .wo-card-foot { font-size: 12.5px; font-weight: 700; opacity: .85; display: flex; align-items: center; justify-content: center; gap: 4px; }
   .wo-ok { width: auto; padding: 12px 34px; animation: wo-pop .5s .6s both; }
+  .wo-layer [hidden] { display: none !important; }
+  .wo-stars { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .wo-stars + .wo-stars { margin-top: 14px; }
+  .wo-stars b { font-size: 44px; line-height: 1.1; letter-spacing: 4px; color: var(--wo2); text-shadow: 0 0 18px var(--wo1); }
   .wo-img { width: 84px; height: 84px; object-fit: contain; filter: drop-shadow(0 0 16px var(--wo1)); }
   .wo-flag { width: 110px; height: auto; border-radius: 6px; box-shadow: 0 0 28px var(--wo1); }
   .wo-tr { display: flex; align-items: center; gap: 10px; }
@@ -104,13 +108,12 @@
     const stage = layer.querySelector(".wo-stage");
     const show = html => { stage.innerHTML = `<div class="wo-step">${html}</div>`; };
     const at = (s, fn) => setTimeout(fn, s * 1000);
-    const foot = /left|izq/i.test(m.foot || "") ? "Izquierdo" : "Derecho";
-    at(STEPS.nation, () => show(`<span class="wo-lbl">Nacionalidad</span>${ok(m.nation) ? woImg(m.nation, "wo-flag") : `<span class="wo-big">🌍</span>`}`));
-    at(STEPS.league, () => show(`<span class="wo-lbl">Liga</span>${ok(m.league) ? woImg(m.league, "wo-img") : `<span class="wo-big">🏟️</span>`}`));
-    at(STEPS.pos, () => show(`<span class="wo-lbl">Posición</span><span class="wo-big">${esc(m.pos)}</span>${m.altPos ? `<span class="wo-sub">${esc(m.altPos)}</span>` : ""}`));
-    at(STEPS.foot, () => show(`<span class="wo-lbl">Pie hábil</span><span class="wo-mid">${foot}</span>
-      <span class="wo-sub">Regate ${woStars(m.sm || 0)} · Pierna mala ${woStars(m.wf || 0)}</span>`));
-    at(STEPS.transfer, () => show(`<span class="wo-lbl">Transferencia</span><div class="wo-tr">${woSide(m.from)}<span class="wo-tr-arrow">➜</span>${woSide(m.to)}</div>`));
+    at(STEPS.nation, () => show(`${ok(m.nation) ? woImg(m.nation, "wo-flag") : `<span class="wo-big">🌍</span>`}`));
+    at(STEPS.league, () => show(`${ok(m.league) ? woImg(m.league, "wo-img") : `<span class="wo-big">🏟️</span>`}`));
+    at(STEPS.pos, () => show(`<span class="wo-big">${esc(m.pos)}</span>${m.altPos ? `<span class="wo-sub">${esc(m.altPos)}</span>` : ""}`));
+    at(STEPS.foot, () => show(`<span class="wo-stars"><span class="wo-sub">Regate</span><b>${woStars(m.sm || 0)}</b></span>
+      <span class="wo-stars"><span class="wo-sub">Pierna mala</span><b>${woStars(m.wf || 0)}</b></span>`));
+    at(STEPS.transfer, () => show(`<div class="wo-tr">${woSide(m.from)}<span class="wo-tr-arrow">➜</span>${woSide(m.to)}</div>`));
     at(STEPS.rat, () => {
       show(`<span class="wo-lbl">RAT</span><span class="wo-big wo-rat">0</span>`);
       const el = stage.querySelector(".wo-rat"), from = Math.max(40, m.rat - 25), t0 = performance.now();
@@ -127,7 +130,7 @@
       stage.innerHTML = `
         <div class="wo-card">
           <div class="wo-card-head"><div class="wo-card-top"><span class="wo-card-rat">${m.rat}</span><span class="wo-card-pos">${esc(m.pos)}</span>
-            <span class="wo-card-icons">${woImg(m.nation, "wo-ci-flag")}${woImg(m.club, "")}</span></div>
+            <span class="wo-card-icons">${woImg(m.nation, "wo-ci-flag")}${woImg(m.to && m.to.logo, "")}</span></div>
           <div class="wo-card-ph">${woImg(m.photo, "")}</div></div>
           <div class="wo-card-name">${esc(m.name)}</div>
           <div class="wo-card-stats">${stats}</div>
@@ -135,6 +138,53 @@
         </div>`;
     });
   };
+
+  // Música de fondo sintetizada (sin archivos ni derechos): batucada a 124 bpm con surdo, caja,
+  // tamborim y agogó; silbatazos al arrancar y fanfarria de trompetas cuando aparece la tarjeta.
+  // a: AudioContext u OfflineAudioContext; out: nodo de salida; t0: inicio; len: segundos de batucada;
+  // cardAt: segundos (desde t0) de la fanfarria. La misma función está en index.html y walkout/render.html.
+  function woMusic(a, out, t0, len, cardAt) {
+    const s16 = 60 / 124 / 4, end = t0 + len;
+    const n = Math.floor(a.sampleRate * 0.5), nb = a.createBuffer(1, n, a.sampleRate), nd = nb.getChannelData(0);
+    for (let i = 0; i < n; i++) nd[i] = Math.random() * 2 - 1;
+    const env = (g, t, v, att, dec) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + att); g.gain.exponentialRampToValueAtTime(0.0001, t + att + dec); };
+    const osc = (type, f, t, v, att, dec, f2) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + att + dec);
+      env(g, t, v, att, dec); o.connect(g).connect(out); o.start(t); o.stop(t + att + dec + 0.05);
+    };
+    const noise = (t, v, dec, fq) => {
+      const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+      s.buffer = nb; f.type = "highpass"; f.frequency.value = fq; env(g, t, v, 0.003, dec);
+      s.connect(f).connect(g).connect(out); s.start(t); s.stop(t + dec + 0.05);
+    };
+    const whistle = (t, dur) => {
+      const o = a.createOscillator(), lfo = a.createOscillator(), lg = a.createGain(), g = a.createGain();
+      o.frequency.value = 2900; lfo.frequency.value = 26; lg.gain.value = 160; lfo.connect(lg).connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.02);
+      g.gain.setValueAtTime(0.07, t + dur - 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(out); o.start(t); lfo.start(t); o.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05);
+    };
+    const brass = (t, f, dur, v) => {
+      const g = a.createGain(), fl = a.createBiquadFilter();
+      fl.type = "lowpass"; fl.Q.value = 2; fl.frequency.setValueAtTime(700, t); fl.frequency.linearRampToValueAtTime(3200, t + 0.06); fl.frequency.linearRampToValueAtTime(1800, t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.04); g.gain.setValueAtTime(v, t + dur - 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.1);
+      [-7, 7].forEach(det => { const o = a.createOscillator(); o.type = "sawtooth"; o.frequency.value = f; o.detune.value = det; o.connect(fl); o.start(t); o.stop(t + dur + 0.15); });
+      fl.connect(g).connect(out);
+    };
+    for (let i = 0; t0 + i * s16 < end - 0.2; i++) {
+      const t = t0 + i * s16, p = i % 8, q = i % 16;
+      if (p === 0) osc("sine", 95, t, 0.3, 0.005, 0.3, 50);         // surdo de resposta
+      if (p === 4) osc("sine", 80, t, 0.5, 0.005, 0.4, 42);         // surdo de marcação
+      noise(t, [0.07, 0.025, 0.04, 0.025][i % 4] * (p === 4 ? 1.4 : 1), 0.06, 2600);  // caixa
+      if (p === 0 || p === 3 || p === 6) osc("square", 1150, t, 0.025, 0.002, 0.05); // tamborim
+      if (q === 0 || q === 8) osc("triangle", 1320, t, 0.05, 0.003, 0.16);            // agogó agudo
+      if (q === 2 || q === 10 || q === 11) osc("triangle", 990, t, 0.05, 0.003, 0.16); // agogó grave
+    }
+    whistle(t0 + 0.05, 0.11); whistle(t0 + 0.24, 0.11); whistle(t0 + 0.43, 0.42);
+    const c = t0 + cardAt;
+    [[523.25, 0, 0.12], [659.25, 0.15, 0.12], [783.99, 0.3, 0.12], [1046.5, 0.45, 0.9]].forEach(([f, d, dur]) => brass(c + d, f, dur, 0.06));
+  }
 
   // Sonido: los mismos efectos de la app, renderizados a WAV (base64) con OfflineAudioContext.
   window.WO_AUDIO = async (seconds) => {
@@ -164,6 +214,9 @@
     snd("rise", 0.02); ["nation", "league", "pos", "foot", "transfer"].forEach(k => snd("hit", STEPS[k])); snd("rise", STEPS.rat);
     for (let t = STEPS.rat; t < STEPS.rat + 1.1; t += 0.04) if (Math.random() < 0.35) snd("tick", t);
     snd("reveal", STEPS.card);
+    const bus = a.createGain(); bus.connect(a.destination);
+    bus.gain.setValueAtTime(0.7, 0); bus.gain.setValueAtTime(0.7, seconds - 1); bus.gain.linearRampToValueAtTime(0.0001, seconds - 0.1);  // se desvanece al final
+    woMusic(a, bus, 0.02, seconds - 0.1, STEPS.card - 0.02);
     const d = (await a.startRendering()).getChannelData(0), n = d.length;
     const ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
     const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
