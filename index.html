@@ -3237,7 +3237,7 @@
         const nx = jornadaDraftSim(j, dl + 1).st;
         rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se agotaron tus 24 h en el " + title + "." + (nx && nx.playerId !== who ? "\n🔄 Comienza el turno de " + playerName(nx.playerId) + "." : "") });
         if (nx) {
-          rows.push({ key: tag + "next", at: dl, url: "./?m=mercado", title: "⌛ " + playerName(who) + " perdió su turno", body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + ".", ...WA_ONLY });
+          rows.push({ key: tag + "next", at: dl, url: "./?m=mercado", title: "⌛ " + playerName(who) + " perdió su turno", body: "🔄 Comienza el turno de " + playerName(nx.playerId) + ".", ...WA_ONLY });
         } else {
           rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + title + ". Compras y ventas libres" + (closeAt ? " hasta el " + shortDate(closeMs) : "."), ...WA_ONLY });
         }
@@ -3261,7 +3261,7 @@
       // Si ya compró 1 de 2, al acabarse el tiempo no pierde el turno (solo no recupera el pendiente).
       const partial = st.picksDone > 0;
       if (nx) {
-        rows.push({ key: tag + "next", at: dl, url: "./?m=mercado", title: "⌛ " + (partial ? "Se acabó el turno de " + playerName(who) : playerName(who) + " perdió su turno"), body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + "." + (nx.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : ""), ...WA_ONLY });
+        rows.push({ key: tag + "next", at: dl, url: "./?m=mercado", title: "⌛ " + (partial ? "Se acabó el turno de " + playerName(who) : playerName(who) + " perdió su turno"), body: "🔄 Comienza el turno de " + playerName(nx.playerId) + "." + (nx.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : ""), ...WA_ONLY });
       } else {
         rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el Draft inicial. Compras y ventas libres.", ...WA_ONLY });
       }
@@ -5385,7 +5385,7 @@
       const after = draftSnapshot();
       let waNote = "";
       if (after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
-        waNote = "🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(after.playerId) + "." + (after.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : "");
+        waNote = "🔄 Comienza el turno de " + playerName(after.playerId) + "." + (after.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : "");
       } else if (after.phase === "open") {
         waNote = "Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres.";
       } else if (after.phase === "draft" && after.playerId === teamId && after.pick === before.pick) {
