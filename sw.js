@@ -5,7 +5,7 @@
 // · Lo que nunca cambia (librería con versión fija, catálogo de jugadores con
 //   número de versión, tipografías): se guarda en el celular y se lee de ahí.
 // No toca las llamadas a Supabase (los datos del torneo siempre se piden en vivo).
-const CACHE = "torneofifa-v5";
+const CACHE = "torneofifa-v6";
 const STATIC = "torneofifa-static-v1";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
@@ -60,7 +60,12 @@ const NET_TIMEOUT_MS = 3000;
 function networkFirst(req, e) {
   const cached = () => caches.match(req).then((hit) => hit || (req.mode === "navigate" ? caches.match("index.html") : undefined));
   let saving = Promise.resolve();
-  const net = fetch(req).then((res) => {
+  // "no-cache": siempre pregunta al sitio si hay versión nueva (si no la hay, contesta rápido con
+  // "sin cambios"); sin esto el navegador podía usar su copia de hasta 10 min y quedarse atrás.
+  const fresh = req.mode === "navigate"
+    ? new Request(req.url, { cache: "no-cache", credentials: "same-origin" })
+    : new Request(req, { cache: "no-cache" });
+  const net = fetch(fresh).then((res) => {
     if (res.ok) saving = caches.open(CACHE).then((c) => c.put(req, res.clone()));
     return res;
   });
