@@ -5387,29 +5387,37 @@
       const title = "💸 " + playerName(teamId) + " compró a " + m.name;
       const info = m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price);
       const actor = notifActor(teamId);
-      const wa = { whatsapp: true, waPhoto: cardImage(m.id) };
-      // Con el Mercado abierto no hay aviso: la base de datos manda al grupo de WhatsApp
-      // el video de la compra (walkout_jobs + GitHub Actions; ver supabase/sql/2026-11-15-walkout-video.sql).
+      // Mercado abierto y Fast Track: al grupo de WhatsApp va el video de la compra, que manda la base de
+      // datos (walkout_jobs + GitHub Actions; ver supabase/sql/2026-11-15-walkout-video.sql). En el Fast Track
+      // la app le agrega al video quién sigue de turno (walkout_note). El Draft inicial sigue con la foto al instante.
+      const videoWA = before.key !== "initial";
+      const wa = videoWA ? {} : { whatsapp: true, waPhoto: cardImage(m.id) };
+      // Mercado abierto: sin aviso push, solo el video.
       if (before.phase !== "draft") return;
       // En el draft, la compra y el cambio de turno van en un solo aviso.
       const after = draftSnapshot();
       const rows = [];
+      let waNote = "";
       if (after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
         const next = after.playerId;
-        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + ".", ...wa });
+        waNote = "🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + ".";
+        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n" + waNote, ...wa });
         // A quien compró desde su cuenta también se le confirma que terminó su turno.
         if (actor && next !== actor) rows.push({ key: key + ":done", url: "./?m=mercado", target: actor, title: "✅ Terminó tu turno",
           body: "Compraste a " + m.name + " (" + info + ").\n🔄 Comienza el turno de " + playerName(next) + "." });
         if (next !== actor) rows.push({ key: key + ":me", url: "./?m=mercado", target: next, title: "🔄 Comienza tu turno",
           body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes " + INITIAL_TURN_TXT + "." : " Tienes " + INITIAL_TURN_TXT + ".") : "") });
       } else if (after.phase === "open") {
-        rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres.", ...wa });
+        waNote = "Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres.";
+        rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". " + waNote, ...wa });
         if (actor) rows.push({ key: key + ":done", url: "./?m=mercado", target: actor, title: "✅ Terminó tu turno",
           body: "Compraste a " + m.name + " (" + info + ").\nTerminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado!" });
       } else {
         const more = after.phase === "draft" && after.playerId === teamId && after.pick === before.pick;
+        if (more) waNote = "🔁 " + playerName(teamId) + " recupera un turno pendiente: le falta 1 selección.";
         rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title + (more ? "\n🔁 Recupera un turno pendiente: le falta 1 selección." : ""), ...wa });
       }
+      if (videoWA && pu && waNote) { try { await sb.rpc("walkout_note", { p_purchase: pu.id, p_note: waNote }); } catch (e) { /* el video sale sin la nota */ } }
       await queueNotifs(rows);
       await syncDraftSchedule();
     }

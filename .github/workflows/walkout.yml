@@ -48,4 +48,5 @@ jobs:
         run: node walkout/record.js
       - name: Plan B (mensaje con foto)
         if: failure()
-        run: curl -sS -X POST "$API?job=$JOB&token=$TOKEN&fail=1&why=workflow" -H "Content-Type: application/json" -d '{}'
+        run: |
+          curl -sS -X POST "$API?job=$JOB&token=$TOKEN&fail=1&why=workflow" -H "Content-Type: application/json" -d '{}'
