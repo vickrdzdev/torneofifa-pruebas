@@ -2464,8 +2464,7 @@
     const st = marketStatus();
     if (error || st.phase !== "draft") return;
     await queueNotifs([
-      { key: "draft0:" + state.season.id + draftRunTag("initial"), exclude: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "Arranca " + playerName(st.playerId) + ". Cada turno tiene " + INITIAL_TURN_TXT + "." },
-      { key: "draft0:" + state.season.id + draftRunTag("initial") + ":me", target: st.playerId, url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "¡Es tu turno! Tienes " + INITIAL_TURN_TXT + " para comprar tu primer jugador o pasar." }]);
+      { key: "draft0:" + state.season.id + draftRunTag("initial"), url: "./?m=mercado", title: "🔥 ¡Comienza el Draft inicial!", body: "🔄 Arranca el turno de " + playerName(st.playerId) + ". Cada turno tiene " + INITIAL_TURN_TXT + ".", ...WA_ONLY }]);
     await syncDraftSchedule();
   }
   function endFtModalHtml() {
@@ -2506,7 +2505,7 @@
     await loadSeasonData(); render();
     if (!error) {
       const jj = state.jornadas.find(x => x.label === st.key);
-      await queueNotifs([{ key: "ftend:" + (jj ? jj.id : st.key), url: "./?m=mercado", title: "⛈️ Se terminó el Fast Track",
+      await queueNotifs([{ key: "ftend:" + (jj ? jj.id : st.key), url: "./?m=mercado", ...WA_ONLY, title: "⛈️ Se terminó el Fast Track",
         body: "El Mercado se cierra. El Draft de la " + st.key + " sigue el " + shortDate(st.resumeAt) + " con el turno de " + playerName(st.playerId) + " (24 h por turno)." }]);
       await syncDraftSchedule();
     }
@@ -3094,7 +3093,10 @@
     // de ese minuto (p. ej. turnos del Draft que se vencen) en el segundo exacto.
     notifyTimer = setTimeout(() => { try { sb.functions.invoke("notify", { body: { loop: true } }).catch(() => {}); } catch (e) {} }, 400);
   }
-  // rows: [{ key, title, body, target?, exclude? (id o lista de ids), kind?, jornadaId?, image?, url?, at? }]
+  // rows: [{ key, title, body, target?, exclude? (id o lista de ids), kind?, jornadaId?, image?, url?, at?,
+  //          whatsapp?, waPhoto?, waText? (texto distinto para el grupo) }]
+  // Avisos que solo van al grupo de WhatsApp (sin push): ...WA_ONLY.
+  const WA_ONLY = { kind: "wa_only", whatsapp: true };
   async function queueNotifs(rows, opts) {
     rows = (rows || []).filter(Boolean);
     if (!rows.length || !state) return;
@@ -3108,7 +3110,7 @@
       title: r.title, body: r.body || "", image: r.image || null, url: r.url || null,
       // Compras, ventas y turnos también se publican en el grupo de WhatsApp (con la foto del jugador).
       // Todas las filas llevan las dos columnas: en un lote, una columna que falta se guarda vacía.
-      whatsapp: !!r.whatsapp, wa_photo: (r.whatsapp && r.waPhoto) || null,
+      whatsapp: !!r.whatsapp, wa_photo: (r.whatsapp && r.waPhoto) || null, wa_text: (r.whatsapp && r.waText) || null,
       send_at: new Date(r.at || base + i).toISOString(),
       ...(opts && opts.sent ? { sent_at: new Date().toISOString(), result: "base" } : {})
     }));
@@ -3182,16 +3184,15 @@
             const lostTxt = lost ? " Pierden turno por penalización: " + lost + "." : "";
             const fast = d.mode === "fast";
             const title = fast ? "⚡ ¡Comienza el Fast Track de la " + j.label + "!" : "🟢 Comienza el Draft de la " + j.label;
-            rows.push(
-              { key: "ft:" + j.id, exclude: d.playerId, url: "./?m=mercado", title, body: "Arranca " + playerName(d.playerId) + "." + (fast ? " Sin límite de tiempo hasta que alguien lo termine." : " Cada turno tiene 24 h.") + lostTxt },
-              { key: "ft:" + j.id + ":me", target: d.playerId, url: "./?m=mercado", title, body: "¡Es tu turno! Compra 1 jugador o pasa." + (fast ? "" : " Tienes 24 h.") + lostTxt });
+            rows.push({ key: "ft:" + j.id, url: "./?m=mercado", title, ...WA_ONLY,
+              body: "🔄 Arranca el turno de " + playerName(d.playerId) + "." + (fast ? " Sin límite de tiempo hasta que alguien lo termine." : " Cada turno tiene 24 h.") + lostTxt });
           }
         }
       });
       if (seasonFinished()) {
         const ps = prizeStandings();
         const champ = ps.rows.find(x => x.place === 1 && !x.placeTo);
-        if (champ) rows.push({ key: "champion:" + state.season.id, url: "./?m=premios", title: "👑 ¡" + playerName(champ.playerId) + " es el Campeón del Torneo!", body: "¡Felicidades! Terminó el torneo con " + champ.total + " puntos generales. Revisa los premios en la app." });
+        if (champ) rows.push({ key: "champion:" + state.season.id, url: "./?m=premios", ...WA_ONLY, title: "👑 ¡" + playerName(champ.playerId) + " es el Campeón del Torneo!", body: "¡Felicidades! Terminó el torneo con " + champ.total + " puntos generales. Revisa los premios en la app." });
       }
       const baseKey = "baseline:" + state.season.id;
       const { data: had } = await sb.from("notifications").select("key").eq("key", baseKey);
@@ -3223,9 +3224,7 @@
       const title = "Draft de la " + j.label;
       if (cur.mode !== "clock" && cur.resumeAt < closeMs) {
         const s0 = jornadaDraftSim(j, cur.resumeAt + 1).st;
-        if (s0) rows.push(
-          { key: prefix + "mon", at: cur.resumeAt, exclude: s0.playerId, url: "./?m=mercado", title: "🟢 Comienza el " + title, body: "Turno de " + playerName(s0.playerId) + ". Cada turno tiene 24 h." },
-          { key: prefix + "mon:me", at: cur.resumeAt, target: s0.playerId, url: "./?m=mercado", title: "🟢 Comienza el " + title, body: "¡Es tu turno! Tienes 24 h para comprar o pasar." });
+        if (s0) rows.push({ key: prefix + "mon", at: cur.resumeAt, url: "./?m=mercado", title: "🟢 Comienza el " + title, body: "🔄 Arranca el turno de " + playerName(s0.playerId) + ". Cada turno tiene 24 h.", ...WA_ONLY });
       }
       let t = cur.mode === "clock" ? Date.now() : cur.resumeAt + 1;
       for (let guard = 0; guard < 40; guard++) {
@@ -3238,10 +3237,9 @@
         const nx = jornadaDraftSim(j, dl + 1).st;
         rows.push({ key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se agotaron tus 24 h en el " + title + "." + (nx && nx.playerId !== who ? "\n🔄 Comienza el turno de " + playerName(nx.playerId) + "." : "") });
         if (nx) {
-          rows.push({ key: tag + "next", at: dl, exclude: nx.playerId, url: "./?m=mercado", title: "⌛ " + playerName(who) + " perdió su turno", body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + ".", whatsapp: true });
-          rows.push({ key: tag + "next:me", at: dl, target: nx.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(who) + ". Comienza tu turno: tienes 24 h." });
+          rows.push({ key: tag + "next", at: dl, url: "./?m=mercado", title: "⌛ " + playerName(who) + " perdió su turno", body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + ".", ...WA_ONLY });
         } else {
-          rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + title + ". Compras y ventas libres" + (closeAt ? " hasta el " + shortDate(closeMs) : "."), whatsapp: true });
+          rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el " + title + ". Compras y ventas libres" + (closeAt ? " hasta el " + shortDate(closeMs) : "."), ...WA_ONLY });
         }
         t = dl + 1;
       }
@@ -3262,15 +3260,10 @@
       const nx = initialDraftSim(dl + 1).st;
       // Si ya compró 1 de 2, al acabarse el tiempo no pierde el turno (solo no recupera el pendiente).
       const partial = st.picksDone > 0;
-      const nextTxt = nx && nx.playerId !== who ? "\n🔄 Comienza el turno de " + playerName(nx.playerId) + "." : "";
-      rows.push(partial
-        ? { key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "✅ Terminó tu turno", body: "Se acabó tu tiempo (" + INITIAL_TURN_TXT + "); te quedó pendiente recuperar un turno." + nextTxt }
-        : { key: tag + "lost", at: dl, target: who, url: "./?m=mercado", title: "⌛ Perdiste tu turno", body: "Se acabó tu tiempo (" + INITIAL_TURN_TXT + ") en el Draft inicial. Lo puedes recuperar eligiendo 2 jugadores en tu siguiente turno." + nextTxt });
       if (nx) {
-        rows.push({ key: tag + "next", at: dl, exclude: [who, nx.playerId], url: "./?m=mercado", title: "⌛ " + (partial ? "Se acabó el turno de " + playerName(who) : playerName(who) + " perdió su turno"), body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + ".", whatsapp: true });
-        rows.push({ key: tag + "next:me", at: dl, target: nx.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: playerName(who) + (partial ? " terminó su turno." : " no alcanzó a comprar.") + " ¡Es tu turno!" + (nx.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente." : "") + " Tienes " + INITIAL_TURN_TXT + "." });
+        rows.push({ key: tag + "next", at: dl, url: "./?m=mercado", title: "⌛ " + (partial ? "Se acabó el turno de " + playerName(who) : playerName(who) + " perdió su turno"), body: "🔄 Termina el turno de " + playerName(who) + ". Comienza el turno de " + playerName(nx.playerId) + "." + (nx.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : ""), ...WA_ONLY });
       } else {
-        rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el Draft inicial. Compras y ventas libres.", whatsapp: true });
+        rows.push({ key: tag + "open", at: dl, url: "./?m=mercado", title: "🛒 ¡Se abre el Mercado!", body: "Terminó el Draft inicial. Compras y ventas libres.", ...WA_ONLY });
       }
       t = dl + 1;
     }
@@ -3309,8 +3302,10 @@
           state.players.forEach(p => {
             const n = pf.active.filter(f => f.playerId === p.id && f.kind === "alineacion" && state.jornadas.indexOf(f.jornada) < i).length + 1;
             const sc = sanctionFor("alineacion", n);
+            // También al grupo de WhatsApp (solo si de verdad le faltó: lo revisa el servidor).
             rows.push({ key: prefix + "ludl:" + p.id, kind: "lineup_deadline", jornadaId: j.id, target: p.id, at: dl + 60 * 1000, url: "./?m=penalizaciones",
-              title: "🚨 Penalización", body: "No entregaste tu alineación completa a tiempo para la " + j.label + " (" + n + "ª falta): " + sanctionText(sc, j) + "." });
+              title: "🚨 Penalización", body: "No entregaste tu alineación completa a tiempo para la " + j.label + " (" + n + "ª falta): " + sanctionText(sc, j) + ".",
+              whatsapp: true, waText: "*🚨 Penalización a " + playerName(p.id) + "*\nNo entregó su alineación completa a tiempo para la " + j.label + " (" + n + "ª falta): " + sanctionText(sc, j) + "." });
           });
           // Miércoles 10:00 previo: consolas actualizadas.
           const wedBack = daysBackTo(pd, 3);
@@ -3319,7 +3314,7 @@
           // Domingo 5:00 pm: cierra el Mercado.
           const close = marketCloseAt(pd, j.id);
           if (close) rows.push({ key: prefix + "mkt", at: close.getTime() - (6 * 3600 + 59 * 60 + 59) * 1000, url: "./?m=mercado",
-            title: "⏰ El Mercado cierra hoy", body: "Cierra a las 11:59 pm, antes de la " + j.label + ". Aprovecha para comprar o vender." });
+            title: "⏰ El Mercado cierra hoy", body: "Cierra a las 11:59 pm, antes de la " + j.label + ". Aprovecha para comprar o vender.", whatsapp: true });
         }
       }
       await replaceScheduled(prefix, rows);
@@ -3336,16 +3331,11 @@
     const after = draftSnapshot();
     const rows = [];
     if (before.phase === "draft" && after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
-      const clock = after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes " + INITIAL_TURN_TXT + "." : " Tienes " + INITIAL_TURN_TXT + ".") : "";
-      rows.push(
-        { key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick, exclude: [notifActor(actorId), after.playerId], url: "./?m=mercado", title: "⏭️ " + playerName(actorId) + " pasó su turno", body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + ".", whatsapp: true },
-        { key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick + ":me", target: after.playerId, url: "./?m=mercado", title: "🔄 Comienza tu turno", body: "Termina el turno de " + playerName(actorId) + ". Comienza tu turno." + clock });
-      // A quien pasó desde su cuenta también se le confirma que terminó su turno.
-      const self = notifActor(actorId);
-      if (self && self !== after.playerId) rows.push({ key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick + ":done", target: self, url: "./?m=mercado",
-        title: "✅ Terminó tu turno", body: (before.picksDone ? "Terminaste tu turno." : "Pasaste tu turno.") + "\n🔄 Comienza el turno de " + playerName(after.playerId) + "." });
+      rows.push({ key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick, url: "./?m=mercado", ...WA_ONLY,
+        title: "⏭️ " + playerName(actorId) + " pasó su turno",
+        body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." + (after.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : "") });
     } else if (before.phase === "draft" && after.phase === "open") {
-      rows.push({ key: "open:" + state.season.id + ":" + before.key, url: "./?m=mercado", title: "⏭️ " + playerName(actorId) + " pasó su turno · 🛒 ¡Se abre el Mercado!", body: "Terminó el " + before.title.replace("Fast Track ", "") + ". Compras y ventas libres.", whatsapp: true });
+      rows.push({ key: "open:" + state.season.id + ":" + before.key, url: "./?m=mercado", title: "⏭️ " + playerName(actorId) + " pasó su turno · 🛒 ¡Se abre el Mercado!", body: "Terminó el " + before.title.replace("Fast Track ", "") + ". Compras y ventas libres.", ...WA_ONLY });
     }
     await queueNotifs(rows);
     await syncDraftSchedule();
@@ -3722,7 +3712,7 @@
     const detail = PEN_KINDS[f.kind].label + " en la " + f.jornada.label + " (" + f.n + "ª falta): " + sanctionText(f.sanction, f.jornada) + ".";
     await queueNotifs([
       { key: "pen:" + rowId, target: f.playerId, url: "./?m=penalizaciones", title: "🚨 Penalización", body: detail },
-      { key: "pen:" + rowId + ":all", exclude: f.playerId, url: "./?m=penalizaciones", title: "🚨 Penalización a " + playerName(f.playerId), body: detail }]);
+      { key: "pen:" + rowId + ":all", url: "./?m=penalizaciones", title: "🚨 Penalización a " + playerName(f.playerId), body: detail, ...WA_ONLY }]);
   }
   async function waivePenalty(jornadaId, playerId) {
     if (!isAdmin) return;
@@ -5386,38 +5376,27 @@
       const key = "buy:" + (pu ? pu.id : m.id + ":" + Date.now());
       const title = "💸 " + playerName(teamId) + " compró a " + m.name;
       const info = m.pos + " · RAT " + m.rat + " · " + FC_TXT(m.price);
-      const actor = notifActor(teamId);
-      // Mercado abierto y Fast Track: al grupo de WhatsApp va el video de la compra, que manda la base de
-      // datos (walkout_jobs + GitHub Actions; ver supabase/sql/2026-11-15-walkout-video.sql). En el Fast Track
-      // la app le agrega al video quién sigue de turno (walkout_note). El Draft inicial sigue con la foto al instante.
-      const videoWA = before.key !== "initial";
-      const wa = videoWA ? {} : { whatsapp: true, waPhoto: cardImage(m.id) };
-      // Mercado abierto: sin aviso push, solo el video.
+      // Las compras ya no mandan push. Al grupo de WhatsApp:
+      //  - Mercado abierto, Fast Track y Draft de la Jornada: el video de la compra, que manda la base de datos
+      //    (walkout_jobs + GitHub Actions; ver supabase/sql/2026-11-15-walkout-video.sql). En los drafts la app
+      //    le agrega quién sigue de turno (walkout_note).
+      //  - Draft inicial: el mensaje con la foto al instante (los turnos son de pocos minutos).
       if (before.phase !== "draft") return;
-      // En el draft, la compra y el cambio de turno van en un solo aviso.
       const after = draftSnapshot();
-      const rows = [];
       let waNote = "";
       if (after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
-        const next = after.playerId;
-        waNote = "🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(next) + ".";
-        rows.push({ key, url: "./?m=mercado", exclude: [actor, next], title, body: info + " · " + before.title + "\n" + waNote, ...wa });
-        // A quien compró desde su cuenta también se le confirma que terminó su turno.
-        if (actor && next !== actor) rows.push({ key: key + ":done", url: "./?m=mercado", target: actor, title: "✅ Terminó tu turno",
-          body: "Compraste a " + m.name + " (" + info + ").\n🔄 Comienza el turno de " + playerName(next) + "." });
-        if (next !== actor) rows.push({ key: key + ":me", url: "./?m=mercado", target: next, title: "🔄 Comienza tu turno",
-          body: playerName(teamId) + " compró a " + m.name + " (" + info + "). Es tu turno." + (after.mode === "clock" ? " Tienes 24 h." : after.mode === "timer" ? (after.allow === 2 ? " Puedes elegir 2 jugadores para recuperar tu turno pendiente. Tienes " + INITIAL_TURN_TXT + "." : " Tienes " + INITIAL_TURN_TXT + ".") : "") });
+        waNote = "🔄 Termina el turno de " + playerName(before.playerId || teamId) + ". Comienza el turno de " + playerName(after.playerId) + "." + (after.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : "");
       } else if (after.phase === "open") {
         waNote = "Terminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado! Compras y ventas libres.";
-        rows.push({ key, url: "./?m=mercado", exclude: actor, title, body: info + ". " + waNote, ...wa });
-        if (actor) rows.push({ key: key + ":done", url: "./?m=mercado", target: actor, title: "✅ Terminó tu turno",
-          body: "Compraste a " + m.name + " (" + info + ").\nTerminó el " + before.title.replace("Fast Track ", "") + ": ¡se abre el Mercado!" });
-      } else {
-        const more = after.phase === "draft" && after.playerId === teamId && after.pick === before.pick;
-        if (more) waNote = "🔁 " + playerName(teamId) + " recupera un turno pendiente: le falta 1 selección.";
-        rows.push({ key, url: "./?m=transacciones", exclude: actor, title, body: info + " · " + before.title + (more ? "\n🔁 Recupera un turno pendiente: le falta 1 selección." : ""), ...wa });
+      } else if (after.phase === "draft" && after.playerId === teamId && after.pick === before.pick) {
+        waNote = "🔁 " + playerName(teamId) + " recupera un turno pendiente: le falta 1 selección.";
       }
-      if (videoWA && pu && waNote) { try { await sb.rpc("walkout_note", { p_purchase: pu.id, p_note: waNote }); } catch (e) { /* el video sale sin la nota */ } }
+      const rows = [];
+      if (before.key === "initial") {
+        rows.push({ key, url: "./?m=mercado", title, body: info + " · " + before.title + (waNote ? "\n" + waNote : ""), ...WA_ONLY, waPhoto: cardImage(m.id) });
+      } else if (pu && waNote) {
+        try { await sb.rpc("walkout_note", { p_purchase: pu.id, p_note: waNote }); } catch (e) { /* el video sale sin la nota */ }
+      }
       await queueNotifs(rows);
       await syncDraftSchedule();
     }
@@ -5469,7 +5448,7 @@
     if (error) showToast("No se pudo registrar la venta.");
     else showToast(pu.card_name + " vendido: +" + fcPlain(amount));
     await loadSeasonData(); render();
-    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", exclude: notifActor(pu.player_id),
+    if (!error) await queueNotifs([{ key: "sell:" + pu.id, url: "./?m=transacciones", ...WA_ONLY,
       title: "💸 " + playerName(pu.player_id) + " vendió a " + pu.card_name, body: "Recibe " + FC_TXT(amount) + " (97% de " + FC_TXT(pu.price) + "). " + pu.card_name + " regresa al Mercado.",
       whatsapp: true, waPhoto: cardImage(pu.card_id) }]);
   }
