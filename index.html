@@ -753,6 +753,31 @@
   @keyframes wo-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
   @keyframes wo-flip { 0% { opacity: 0; transform: perspective(700px) rotateY(180deg) scale(.5); } 100% { opacity: 1; transform: perspective(700px) rotateY(0) scale(1); } }
   @keyframes wo-shine { to { transform: translateX(120%); } }
+  /* Sobre del walkout: sube, brilla y se abre (en la app, al tocarlo; en el video, solo). */
+  .wo-pack-wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .wo-pack { position: relative; width: 170px; height: 250px; border-radius: 16px; overflow: hidden; cursor: pointer;
+    background: linear-gradient(155deg, var(--wo2) 0%, var(--wo1) 45%, color-mix(in srgb, var(--wo1) 55%, #000) 100%);
+    box-shadow: 0 0 26px color-mix(in srgb, var(--wo2) 70%, transparent), inset 0 0 0 2px rgba(255,255,255,.35);
+    animation: wo-pack-rise .9s cubic-bezier(.2, 1.1, .3, 1) both, wo-pack-glow 1.4s .9s ease-in-out infinite alternate; }
+  .wo-pack::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255,255,255,.12) 14px 16px); }
+  .wo-pack::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.6) 50%, transparent 65%);
+    transform: translateX(-120%); animation: wo-shine 1.6s 1s ease-in-out infinite; }
+  .wo-pack-flap { position: absolute; left: 0; right: 0; top: 0; height: 36px; background: rgba(0,0,0,.2); border-bottom: 2px dashed rgba(255,255,255,.5); }
+  .wo-pack-logo { position: absolute; inset: 36px 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 56px; }
+  .wo-pack-logo span { font-family: var(--font-display); font-weight: 800; font-size: 21px; letter-spacing: .14em; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .wo-pack-hint { font-size: 15px; font-weight: 700; color: #fff; opacity: 0; animation: wo-in .4s 1s both, wo-blink 1.2s 1.4s ease-in-out infinite; }
+  .wo-pack.wo-open { animation: wo-pack-shake .5s ease both; }
+  .wo-pack.wo-open .wo-pack-flap { animation: wo-flap .45s .3s ease-in forwards; }
+  .wo-flash { position: absolute; inset: 0; pointer-events: none; animation: wo-flash .9s ease-out forwards;
+    background: radial-gradient(circle, #fff 0%, color-mix(in srgb, var(--wo2) 70%, transparent) 30%, transparent 65%); }
+  @keyframes wo-pack-rise { from { transform: translateY(110vh) scale(.8); } to { transform: none; } }
+  @keyframes wo-pack-glow { from { box-shadow: 0 0 26px color-mix(in srgb, var(--wo2) 70%, transparent), inset 0 0 0 2px rgba(255,255,255,.35); }
+    to { box-shadow: 0 0 60px var(--wo2), 0 0 110px color-mix(in srgb, var(--wo1) 80%, transparent), inset 0 0 0 2px rgba(255,255,255,.55); } }
+  @keyframes wo-pack-shake { 0%, 100% { transform: none; } 20% { transform: rotate(-5deg) scale(1.03); } 40% { transform: rotate(5deg) scale(1.06); }
+    60% { transform: rotate(-4deg) scale(1.08); } 80% { transform: rotate(3deg) scale(1.12); } }
+  @keyframes wo-flap { to { transform: translateY(-160px) rotate(-28deg); opacity: 0; } }
+  @keyframes wo-flash { 0% { opacity: 0; transform: scale(.3); } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(2.4); } }
+  @keyframes wo-blink { 50% { opacity: .35; } }
   @keyframes wo-slide { from { transform: translateX(-6px); } to { transform: translateX(6px); } }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-display); font-size: 18px; }
 </style>
@@ -859,7 +884,7 @@
   let startModulePicked = !!urlModule;
   let navOpen = false;
   // Versión de la app que se ve al final del menú (súbela en cada publicación para saber cuál tiene cada celular).
-  const APP_BUILD = "2026-11-20.10";
+  const APP_BUILD = "2026-11-20.11";
   let teamsTab = null;
   let teamView = "alineacion"; // pestaña dentro de Equipos: "alineacion" | "plantilla"
   let market = null;          // jugadores del mercado (market.json)
@@ -4736,6 +4761,7 @@
       if (kind === "rise") { woNoise(t, 1.4, 0.25, 150, 1800); woTone(55, t, 1.4, "sine", 0.2, 110); }
       else if (kind === "hit") { woTone(110, t, 0.45, "sine", 0.5, 45); woNoise(t, 0.3, 0.2, 2500, 300); }
       else if (kind === "tick") woTone(1400, t, 0.05, "square", 0.04);
+      else if (kind === "open") { woNoise(t, 0.6, 0.3, 600, 7000); woTone(220, t, 0.6, "triangle", 0.25, 880); }
       else if (kind === "reveal") {
         [523.3, 659.3, 784, 1046.5, 1318.5].forEach((f, i) => woTone(f, t + i * 0.08, 0.9, "triangle", 0.16));
         woNoise(t, 0.8, 0.12, 3000, 9000);
@@ -4856,13 +4882,8 @@
     return (p && p.logo_path && (state.logoUrls || {})[p.logo_path]) || null;
   }
   const teamLabel = id => { const p = state.players.find(pl => pl.id === id); return (p && p.team_name) || playerName(id); };
-  // De dónde viene: si alguien del torneo lo vendió antes, de su equipo; si no, de su club real.
-  function woOrigin(m) {
-    const prev = (state.purchases || []).filter(x => x.card_id === m.id && x.sold_at)
-      .sort((a, b) => String(a.sold_at).localeCompare(String(b.sold_at))).pop();
-    if (prev) return { name: teamLabel(prev.player_id), logo: teamLogoUrl(prev.player_id) };
-    return { name: "", logo: marketImg("club", m.club) };
-  }
+  // De dónde viene: siempre de su club real.
+  const woOrigin = m => ({ name: "", logo: marketImg("club", m.club) });
   // Pasos de la revelación (ms desde que arranca). La misma secuencia está en walkout/render.html (video de WhatsApp).
   const WO_AT = { nation: 900, league: 2000, pos: 3100, foot: 4200, transfer: 5300, rat: 6900, card: 8500 };
   const woImg = (url, cls) => url ? `<img class="${cls}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : "";
@@ -4886,7 +4907,7 @@
   // Reporte para revisar desde la base cómo le fue a la animación en el celular (walkout_jobs.app_diag).
   function woDiagSend(purchaseId, m) {
     try {
-      const kind = u => /\/nation\//.test(u) ? "nacion" : /\/league\//.test(u) ? "liga" : /\/clubs\//.test(u) ? "club" : /\/players\//.test(u) ? "foto" : "escudo";
+      const kind = u => /\/nation\//.test(u) ? "nacion" : /\/league\//.test(u) ? "liga" : /\/clubs?\//.test(u) ? "club" : /\/players\//.test(u) ? "foto" : "escudo";
       const imgs = [...woPreloaded].map(([u, i]) => kind(u) + ":" + (i.complete ? (i.naturalWidth > 0 ? "ok" : "falló") : "cargando"));
       const info = "v" + APP_BUILD + " · market.img " + (market && market.img && market.img.nation ? "sí" : "NO") +
         " · nation=" + m.nation + " league=" + m.league + " club=" + m.club + " · " + (imgs.join(" ") || "sin imágenes") + " · " + navigator.userAgent.slice(0, 90);
@@ -4904,11 +4925,36 @@
     document.body.appendChild(layer);
     wo = { layer, stage: layer.querySelector(".wo-stage"), timers: [], m, teamId, done: false };
     layer.querySelector(".wo-skip").addEventListener("click", e => { e.stopPropagation(); woFinal(true); });
+    // Primero el sobre: sube al centro y espera a que lo toquen; al tocarlo se abre y arranca la revelación.
+    woSound("rise");
+    wo.stage.innerHTML = `<div class="wo-pack-wrap"><div class="wo-pack"><div class="wo-pack-flap"></div>
+      <div class="wo-pack-logo">⚽<span>TORNEO FIFA</span></div></div><span class="wo-pack-hint">Toca para abrir</span></div>`;
+    const pack = wo.stage.querySelector(".wo-pack");
+    pack.addEventListener("click", e => {
+      e.stopPropagation();
+      if (!wo || wo.opened) return;
+      wo.opened = true;
+      walkoutAudioPrime();
+      pack.classList.add("wo-open");
+      wo.stage.querySelector(".wo-pack-hint").remove();
+      woSound("hit");
+      if (navigator.vibrate) navigator.vibrate(30);
+      wo.timers.push(setTimeout(() => {
+        const fl = document.createElement("div"); fl.className = "wo-flash"; wo.layer.appendChild(fl);
+        setTimeout(() => fl.remove(), 1000);
+        woSound("open");
+      }, 550));
+      wo.timers.push(setTimeout(woReveal, 800));
+    });
+  }
+  function woReveal() {
+    if (!wo || wo.done) return;
+    const m = wo.m, teamId = wo.teamId;
+    wo.stage.innerHTML = "";
     const step = (ms, fn) => wo.timers.push(setTimeout(fn, ms));
     const show = (html, sound) => { wo.stage.innerHTML = `<div class="wo-step">${html}</div>`; woSound(sound); };
     const nation = marketImg("nation", m.nation), league = marketImg("leagueMono", m.league);
     const from = woOrigin(m), to = { name: teamLabel(teamId), logo: teamLogoUrl(teamId) };
-    woSound("rise");
     woMusicStart(WO_AT.card / 1000 + 2.6);
     step(WO_AT.nation, () => { show(`${woImgOr(nation, "wo-flag", `<span class="wo-big">🌍</span>`)}`, "hit"); if (navigator.vibrate) navigator.vibrate(40); });
     step(WO_AT.league, () => show(`${woImgOr(league, "wo-img", `<span class="wo-big">🏟️</span>`)}`, "hit"));

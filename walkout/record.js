@@ -12,7 +12,7 @@ const { chromium } = require("playwright");
 
 // Igual que PHOTO_BASE en index.html.
 const PHOTO_BASE = "https://cdn3.futbin.com/content/fifa27/img/players/";
-const SECONDS = 11; // largo del video (la tarjeta aparece en 8.5 s)
+const SECONDS = 13.4; // largo del video (el sobre se abre en 2.4 s y la tarjeta aparece en 10.9 s)
 const FFMPEG = process.env.FFMPEG || (() => { try { return require("ffmpeg-static"); } catch (e) { return "ffmpeg"; } })();
 const { API, JOB, TOKEN, LOCAL, OUT } = process.env;
 const jobUrl = (extra) => `${API}?job=${encodeURIComponent(JOB)}&token=${encodeURIComponent(TOKEN)}${extra || ""}`;
@@ -38,8 +38,8 @@ async function main() {
     rat: job.rat, pac: c.pac, sho: c.sho, pas: c.pas, dri: c.dri, def: c.def, phy: c.phy,
     photo: c.photo ? PHOTO_BASE + c.photo : null, price: job.price, buyer: job.buyer,
     nation: img("nation", c.nation), league: img("leagueMono", c.league), club: img("club", c.club),
-    // Origen: el equipo de quien lo vendió antes en el torneo o, si no, su club real. Destino: el equipo de quien compra.
-    from: job.from_team ? { name: job.from_team, logo: job.from_logo || null } : { name: "", logo: img("club", c.club) },
+    // Origen: siempre su club real. Destino: el equipo de quien compra.
+    from: { name: "", logo: img("club", c.club) },
     to: { name: job.buyer_team || job.buyer, logo: job.buyer_logo || null },
   };
   console.log("Compra:", wo.buyer, "→", wo.name, wo.rat);
