@@ -3333,7 +3333,7 @@
     if (before.phase === "draft" && after.phase === "draft" && after.key === before.key && after.pick !== before.pick && after.playerId) {
       rows.push({ key: "turn:" + state.season.id + ":" + after.key + draftRunTag(after.key) + ":" + after.pick, url: "./?m=mercado", ...WA_ONLY,
         title: "⏭️ " + playerName(actorId) + " pasó su turno",
-        body: "🔄 Termina el turno de " + playerName(actorId) + ". Comienza el turno de " + playerName(after.playerId) + "." + (after.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : "") });
+        body: "🔄 Comienza el turno de " + playerName(after.playerId) + "." + (after.allow === 2 ? " Puede elegir 2 jugadores para recuperar su turno pendiente." : "") });
     } else if (before.phase === "draft" && after.phase === "open") {
       rows.push({ key: "open:" + state.season.id + ":" + before.key, url: "./?m=mercado", title: "⏭️ " + playerName(actorId) + " pasó su turno · 🛒 ¡Se abre el Mercado!", body: "Terminó el " + before.title.replace("Fast Track ", "") + ". Compras y ventas libres.", ...WA_ONLY });
     }
