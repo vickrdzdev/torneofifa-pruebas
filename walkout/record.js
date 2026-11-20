@@ -27,8 +27,12 @@ async function main() {
   const mk = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "market.json"), "utf8"));
   const row = mk.rows.find((r) => r[0] === job.card_id);
   const c = row ? Object.fromEntries(mk.cols.map((k, i) => [k, row[i]])) : {};
-  // Bandera, liga y club: market.json trae la plantilla de la liga de futbin y la firma de cada id.
-  const img = (kind, id) => { const im = mk.img && mk.img[kind]; const sig = im && id != null ? im.s[id] : null; return sig ? im.tpl.replace("{id}", id).replace("{s}", sig) : null; };
+  // Copias en img/futbin/ (tools/futbin_imgs.py); si falta alguna, se usa el ícono de respaldo.
+  const DIRS = { nation: "nation", leagueMono: "league", club: "club" };
+  const img = (kind, id) => {
+    const f = id != null ? path.join(__dirname, "..", "img", "futbin", DIRS[kind], id + ".png") : null;
+    return f && fs.existsSync(f) ? "file://" + f : null;
+  };
   const wo = {
     name: job.card_name, pos: job.pos || c.pos, altPos: c.altPos || "", foot: c.foot, sm: job.sm ?? c.sm, wf: job.wf ?? c.wf,
     rat: job.rat, pac: c.pac, sho: c.sho, pas: c.pas, dri: c.dri, def: c.def, phy: c.phy,

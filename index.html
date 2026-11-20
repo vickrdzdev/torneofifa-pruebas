@@ -859,7 +859,7 @@
   let startModulePicked = !!urlModule;
   let navOpen = false;
   // Versión de la app que se ve al final del menú (súbela en cada publicación para saber cuál tiene cada celular).
-  const APP_BUILD = "2026-11-20.9";
+  const APP_BUILD = "2026-11-20.10";
   let teamsTab = null;
   let teamView = "alineacion"; // pestaña dentro de Equipos: "alineacion" | "plantilla"
   let market = null;          // jugadores del mercado (market.json)
@@ -4844,11 +4844,12 @@
   // Color de la tarjeta según el RAT.
   const woTier = rat => rat >= 88 ? "elite" : rat >= 84 ? "oro" : rat >= 78 ? "plata" : "bronce";
   const woStars = n => "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
-  // Imágenes de futbin del mercado (bandera, liga, club): market.json trae la plantilla y la firma de cada id.
+  // Bandera, liga y club del jugador: copias en img/futbin/ de las imágenes de futbin (las descarga
+  // tools/futbin_imgs.py), porque futbin no siempre las entrega en un formato que el celular pueda mostrar.
+  const FUTBIN_DIR = { nation: "nation", leagueMono: "league", club: "club" };
   function marketImg(kind, id) {
     const im = market && market.img && market.img[kind];
-    const sig = im && id != null ? im.s[id] : null;
-    return sig ? im.tpl.replace("{id}", id).replace("{s}", sig) : null;
+    return im && id != null && im.s[id] && FUTBIN_DIR[kind] ? "img/futbin/" + FUTBIN_DIR[kind] + "/" + id + ".png" : null;
   }
   function teamLogoUrl(id) {
     const p = state && state.players.find(pl => pl.id === id);

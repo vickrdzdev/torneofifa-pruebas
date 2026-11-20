@@ -36,6 +36,7 @@ jobs:
           sparse-checkout: |
             walkout
             market.json
+            img/futbin
           sparse-checkout-cone-mode: false
       - name: Preparar navegador y ffmpeg
         working-directory: walkout
