@@ -731,11 +731,24 @@
   .wo-stat b { font-family: var(--font-display); font-size: 19px; }
   .wo-card-foot { font-size: 12.5px; font-weight: 700; opacity: .85; display: flex; align-items: center; justify-content: center; gap: 4px; }
   .wo-ok { width: auto; padding: 12px 34px; animation: wo-pop .5s .6s both; }
+  .wo-layer [hidden] { display: none !important; }
+  .wo-img { width: 84px; height: 84px; object-fit: contain; filter: drop-shadow(0 0 16px var(--wo1)); }
+  .wo-flag { width: 110px; height: auto; border-radius: 6px; box-shadow: 0 0 28px var(--wo1); }
+  .wo-tr { display: flex; align-items: center; gap: 10px; }
+  .wo-tr-side { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 112px; }
+  .wo-tr-side .wo-img { width: 72px; height: 72px; }
+  .wo-tr-ph { width: 72px; height: 72px; border-radius: 50%; background: rgba(255,255,255,.1); display: flex; align-items: center; justify-content: center; font-size: 30px; }
+  .wo-tr-name { font-size: 14px; font-weight: 700; color: #e9efe9; line-height: 1.2; }
+  .wo-tr-arrow { font-family: var(--font-display); font-size: 44px; font-weight: 800; color: var(--wo2); text-shadow: 0 0 18px var(--wo1); animation: wo-slide .8s ease-in-out infinite alternate; }
+  .wo-card-icons { display: flex; flex-direction: column; align-items: center; gap: 5px; margin-top: 6px; }
+  .wo-card-icons img { width: 26px; height: 26px; object-fit: contain; }
+  .wo-card-icons img.wo-ci-flag { width: 28px; height: auto; border-radius: 3px; }
   @keyframes wo-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes wo-spin { to { transform: rotate(360deg); } }
   @keyframes wo-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
   @keyframes wo-flip { 0% { opacity: 0; transform: perspective(700px) rotateY(180deg) scale(.5); } 100% { opacity: 1; transform: perspective(700px) rotateY(0) scale(1); } }
   @keyframes wo-shine { to { transform: translateX(120%); } }
+  @keyframes wo-slide { from { transform: translateX(-6px); } to { transform: translateX(6px); } }
   .loading-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font-display); font-size: 18px; }
 </style>
 </head>
@@ -2608,7 +2621,7 @@
   }
   // Versión del catálogo de jugadores: el celular lo guarda y solo lo vuelve a
   // descargar cuando este número cambia (súbelo cada vez que se actualice market.json).
-  const MARKET_VERSION = 1;
+  const MARKET_VERSION = 2;
   function loadMarket() {
     if (market || marketLoading) return;
     marketLoading = true; marketError = false;
@@ -2621,6 +2634,7 @@
         return o;
       });
       market.byId = {}; market.forEach(m => market.byId[m.id] = m);
+      market.img = d.img || {};  // imágenes de bandera, liga y club (ver marketImg)
       marketLoading = false; render();
     }).catch(() => { marketLoading = false; marketError = true; render(); });
   }
@@ -4705,6 +4719,32 @@
   // Color de la tarjeta según el RAT.
   const woTier = rat => rat >= 88 ? "elite" : rat >= 84 ? "oro" : rat >= 78 ? "plata" : "bronce";
   const woStars = n => "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
+  // Imágenes de futbin del mercado (bandera, liga, club): market.json trae la plantilla y la firma de cada id.
+  function marketImg(kind, id) {
+    const im = market && market.img && market.img[kind];
+    const sig = im && id != null ? im.s[id] : null;
+    return sig ? im.tpl.replace("{id}", id).replace("{s}", sig) : null;
+  }
+  function teamLogoUrl(id) {
+    const p = state && state.players.find(pl => pl.id === id);
+    return (p && p.logo_path && (state.logoUrls || {})[p.logo_path]) || null;
+  }
+  const teamLabel = id => { const p = state.players.find(pl => pl.id === id); return (p && p.team_name) || playerName(id); };
+  // De dónde viene: si alguien del torneo lo vendió antes, de su equipo; si no, de su club real.
+  function woOrigin(m) {
+    const prev = (state.purchases || []).filter(x => x.card_id === m.id && x.sold_at)
+      .sort((a, b) => String(a.sold_at).localeCompare(String(b.sold_at))).pop();
+    if (prev) return { name: teamLabel(prev.player_id), logo: teamLogoUrl(prev.player_id) };
+    return { name: "", logo: marketImg("club", m.club) };
+  }
+  // Pasos de la revelación (ms desde que arranca). La misma secuencia está en walkout/render.html (video de WhatsApp).
+  const WO_AT = { nation: 900, league: 2000, pos: 3100, foot: 4200, transfer: 5300, rat: 6900, card: 8500 };
+  const woImg = (url, cls) => url ? `<img class="${cls}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : "";
+  // Imagen con ícono de respaldo: si no hay o no carga, se ve el ícono.
+  const woImgOr = (url, cls, fb) => url
+    ? `<img class="${cls}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fb.replace(">", " hidden>")}`
+    : fb;
+  const woSide = x => `<div class="wo-tr-side">${woImgOr(x.logo, "wo-img", `<span class="wo-tr-ph">⚽</span>`)}${x.name ? `<span class="wo-tr-name">${escapeHtml(x.name)}</span>` : ""}</div>`;
   function walkout(m, teamId) {
     if (!m) return;
     closeWalkout();
@@ -4718,11 +4758,16 @@
     const step = (ms, fn) => wo.timers.push(setTimeout(fn, ms));
     const show = (html, sound) => { wo.stage.innerHTML = `<div class="wo-step">${html}</div>`; woSound(sound); };
     const foot = /left|izq/i.test(m.foot || "") ? "Izquierdo" : "Derecho";
+    const nation = marketImg("nation", m.nation), league = marketImg("leagueMono", m.league);
+    const from = woOrigin(m), to = { name: teamLabel(teamId), logo: teamLogoUrl(teamId) };
     woSound("rise");
-    step(900, () => { show(`<span class="wo-lbl">Posición</span><span class="wo-big">${escapeHtml(m.pos)}</span>${(m.altPos ? `<span class="wo-sub">${escapeHtml(m.altPos)}</span>` : "")}`, "hit"); if (navigator.vibrate) navigator.vibrate(40); });
-    step(2100, () => show(`<span class="wo-lbl">Pie hábil</span><span class="wo-mid">${foot}</span>
+    step(WO_AT.nation, () => { show(`<span class="wo-lbl">Nacionalidad</span>${woImgOr(nation, "wo-flag", `<span class="wo-big">🌍</span>`)}`, "hit"); if (navigator.vibrate) navigator.vibrate(40); });
+    step(WO_AT.league, () => show(`<span class="wo-lbl">Liga</span>${woImgOr(league, "wo-img", `<span class="wo-big">🏟️</span>`)}`, "hit"));
+    step(WO_AT.pos, () => show(`<span class="wo-lbl">Posición</span><span class="wo-big">${escapeHtml(m.pos)}</span>${(m.altPos ? `<span class="wo-sub">${escapeHtml(m.altPos)}</span>` : "")}`, "hit"));
+    step(WO_AT.foot, () => show(`<span class="wo-lbl">Pie hábil</span><span class="wo-mid">${foot}</span>
       <span class="wo-sub">Regate ${woStars(m.sm || 0)} · Pierna mala ${woStars(m.wf || 0)}</span>`, "hit"));
-    step(3300, () => {
+    step(WO_AT.transfer, () => show(`<span class="wo-lbl">Transferencia</span><div class="wo-tr">${woSide(from)}<span class="wo-tr-arrow">➜</span>${woSide(to)}</div>`, "hit"));
+    step(WO_AT.rat, () => {
       show(`<span class="wo-lbl">RAT</span><span class="wo-big wo-rat">0</span>`, "rise");
       const el = wo.stage.querySelector(".wo-rat"), from = Math.max(40, m.rat - 25), t0 = Date.now();
       const tick = () => {
@@ -4733,7 +4778,7 @@
       };
       tick();
     });
-    step(4900, woFinal);
+    step(WO_AT.card, woFinal);
   }
   function woFinal() {
     if (!wo || wo.done) return;
@@ -4746,7 +4791,8 @@
     wo.layer.querySelector(".wo-skip").remove();
     wo.stage.innerHTML = `
       <div class="wo-card">
-        <div class="wo-card-head"><div class="wo-card-top"><span class="wo-card-rat">${m.rat}</span><span class="wo-card-pos">${escapeHtml(m.pos)}</span></div>
+        <div class="wo-card-head"><div class="wo-card-top"><span class="wo-card-rat">${m.rat}</span><span class="wo-card-pos">${escapeHtml(m.pos)}</span>
+          <span class="wo-card-icons">${woImg(marketImg("nation", m.nation), "wo-ci-flag")}${woImg(marketImg("club", m.club), "")}</span></div>
         <div class="wo-card-ph">${photo}</div></div>
         <div class="wo-card-name">${escapeHtml(m.name)}</div>
         <div class="wo-card-stats">${stats}</div>

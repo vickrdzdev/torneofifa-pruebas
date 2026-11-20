@@ -12,7 +12,7 @@ const { chromium } = require("playwright");
 
 // Igual que PHOTO_BASE en index.html.
 const PHOTO_BASE = "https://cdn3.futbin.com/content/fifa27/img/players/";
-const SECONDS = 7.5; // largo del video (la tarjeta aparece en 4.9 s)
+const SECONDS = 11; // largo del video (la tarjeta aparece en 8.5 s)
 const FFMPEG = process.env.FFMPEG || (() => { try { return require("ffmpeg-static"); } catch (e) { return "ffmpeg"; } })();
 const { API, JOB, TOKEN, LOCAL, OUT } = process.env;
 const jobUrl = (extra) => `${API}?job=${encodeURIComponent(JOB)}&token=${encodeURIComponent(TOKEN)}${extra || ""}`;
@@ -27,10 +27,16 @@ async function main() {
   const mk = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "market.json"), "utf8"));
   const row = mk.rows.find((r) => r[0] === job.card_id);
   const c = row ? Object.fromEntries(mk.cols.map((k, i) => [k, row[i]])) : {};
+  // Bandera, liga y club: market.json trae la plantilla de la liga de futbin y la firma de cada id.
+  const img = (kind, id) => { const im = mk.img && mk.img[kind]; const sig = im && id != null ? im.s[id] : null; return sig ? im.tpl.replace("{id}", id).replace("{s}", sig) : null; };
   const wo = {
     name: job.card_name, pos: job.pos || c.pos, altPos: c.altPos || "", foot: c.foot, sm: job.sm ?? c.sm, wf: job.wf ?? c.wf,
     rat: job.rat, pac: c.pac, sho: c.sho, pas: c.pas, dri: c.dri, def: c.def, phy: c.phy,
     photo: c.photo ? PHOTO_BASE + c.photo : null, price: job.price, buyer: job.buyer,
+    nation: img("nation", c.nation), league: img("leagueMono", c.league), club: img("club", c.club),
+    // Origen: el equipo de quien lo vendió antes en el torneo o, si no, su club real. Destino: el equipo de quien compra.
+    from: job.from_team ? { name: job.from_team, logo: job.from_logo || null } : { name: "", logo: img("club", c.club) },
+    to: { name: job.buyer_team || job.buyer, logo: job.buyer_logo || null },
   };
   console.log("Compra:", wo.buyer, "→", wo.name, wo.rat);
 
@@ -41,7 +47,8 @@ async function main() {
   const page = await ctx.newPage();
   await page.addInitScript((d) => { window.WO = d; }, wo);
   await page.goto("file://" + path.join(__dirname, "render.html"));
-  await page.evaluate(() => window.WO_READY);
+  const loaded = await page.evaluate(() => window.WO_READY);
+  console.log("Imágenes:", Object.entries(loaded).map(([u, ok]) => (ok ? "ok " : "FALLÓ ") + u.split("?")[0]).join(" | ") || "ninguna");
   await page.waitForTimeout(300);
   await page.evaluate(() => window.WO_START());
   await page.waitForTimeout(SECONDS * 1000 + 500);
@@ -71,7 +78,8 @@ async function main() {
   if (LOCAL) return;
 
   // 5. Entrega el video: la función lo guarda y lo manda al grupo.
-  const r = await fetch(jobUrl(), { method: "POST", headers: { "Content-Type": "video/mp4" }, body: mp4 });
+  const imgs = Object.values(loaded).filter(Boolean).length + "/" + Object.keys(loaded).length;
+  const r = await fetch(jobUrl("&imgs=" + imgs), { method: "POST", headers: { "Content-Type": "video/mp4" }, body: mp4 });
   const txt = await r.text();
   console.log("Envío:", r.status, txt);
   if (!r.ok) throw new Error("envío " + r.status);
