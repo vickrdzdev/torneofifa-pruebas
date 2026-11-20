@@ -753,29 +753,46 @@
   @keyframes wo-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
   @keyframes wo-flip { 0% { opacity: 0; transform: perspective(700px) rotateY(180deg) scale(.5); } 100% { opacity: 1; transform: perspective(700px) rotateY(0) scale(1); } }
   @keyframes wo-shine { to { transform: translateX(120%); } }
-  /* Sobre del walkout: sube, brilla y se abre (en la app, al tocarlo; en el video, solo). */
-  .wo-pack-wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; }
-  .wo-pack { position: relative; width: 170px; height: 250px; border-radius: 16px; overflow: hidden; cursor: pointer;
-    background: linear-gradient(155deg, var(--wo2) 0%, var(--wo1) 45%, color-mix(in srgb, var(--wo1) 55%, #000) 100%);
-    box-shadow: 0 0 26px color-mix(in srgb, var(--wo2) 70%, transparent), inset 0 0 0 2px rgba(255,255,255,.35);
+  /* Sobre del walkout (estilo sobre de cartas metálico): sube, brilla y se abre (en la app al tocarlo; en el video, solo). */
+  .wo-pack-wrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .wo-pack { --m-dark: color-mix(in srgb, var(--wo1) 50%, #000); --m-mid: var(--wo1); --m-light: var(--wo2);
+    position: relative; width: 180px; height: 270px; cursor: pointer;
     animation: wo-pack-rise .9s cubic-bezier(.2, 1.1, .3, 1) both, wo-pack-glow 1.4s .9s ease-in-out infinite alternate; }
-  .wo-pack::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, transparent 0 14px, rgba(255,255,255,.12) 14px 16px); }
-  .wo-pack::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.6) 50%, transparent 65%);
-    transform: translateX(-120%); animation: wo-shine 1.6s 1s ease-in-out infinite; }
-  .wo-pack-flap { position: absolute; left: 0; right: 0; top: 0; height: 36px; background: rgba(0,0,0,.2); border-bottom: 2px dashed rgba(255,255,255,.5); }
-  .wo-pack-logo { position: absolute; inset: 36px 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-size: 56px; }
-  .wo-pack-logo span { font-family: var(--font-display); font-weight: 800; font-size: 21px; letter-spacing: .14em; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .wo-pack-top, .wo-pack-body { position: absolute; left: 0; right: 0; overflow: hidden;
+    background: linear-gradient(100deg, var(--m-dark) 0%, var(--m-light) 14%, #fff 20%, var(--m-light) 26%, var(--m-mid) 40%, var(--m-dark) 52%,
+      var(--m-mid) 62%, var(--m-light) 76%, #fff 82%, var(--m-light) 88%, var(--m-dark) 100%);
+    background-size: 220% 100%; animation: wo-metal 3.2s linear infinite; }
+  .wo-pack-top { top: 0; height: 40px; clip-path: polygon(0.00% 7px, 3.12% 0, 6.25% 7px, 9.38% 0, 12.50% 7px, 15.62% 0, 18.75% 7px, 21.88% 0, 25.00% 7px, 28.12% 0, 31.25% 7px, 34.38% 0, 37.50% 7px, 40.62% 0, 43.75% 7px, 46.88% 0, 50.00% 7px, 53.12% 0, 56.25% 7px, 59.38% 0, 62.50% 7px, 65.62% 0, 68.75% 7px, 71.88% 0, 75.00% 7px, 78.12% 0, 81.25% 7px, 84.38% 0, 87.50% 7px, 90.62% 0, 93.75% 7px, 96.88% 0, 100.00% 7px, 100% 100%, 0 100%); z-index: 2; }
+  .wo-pack-top::before { content: ""; position: absolute; inset: 7px 0 10px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.35) 0 2px, rgba(0,0,0,.18) 2px 5px); }
+  .wo-pack-top::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 3px; border-bottom: 2px dashed rgba(255,255,255,.75); }
+  .wo-pack-body { top: 40px; bottom: 0; clip-path: polygon(0 0, 100% 0, 100.00% calc(100% - 7px), 96.88% 100%, 93.75% calc(100% - 7px), 90.62% 100%, 87.50% calc(100% - 7px), 84.38% 100%, 81.25% calc(100% - 7px), 78.12% 100%, 75.00% calc(100% - 7px), 71.88% 100%, 68.75% calc(100% - 7px), 65.62% 100%, 62.50% calc(100% - 7px), 59.38% 100%, 56.25% calc(100% - 7px), 53.12% 100%, 50.00% calc(100% - 7px), 46.88% 100%, 43.75% calc(100% - 7px), 40.62% 100%, 37.50% calc(100% - 7px), 34.38% 100%, 31.25% calc(100% - 7px), 28.12% 100%, 25.00% calc(100% - 7px), 21.88% 100%, 18.75% calc(100% - 7px), 15.62% 100%, 12.50% calc(100% - 7px), 9.38% 100%, 6.25% calc(100% - 7px), 3.12% 100%, 0.00% calc(100% - 7px)); }
+  .wo-pack-body::before { content: ""; position: absolute; left: 0; right: 0; bottom: 7px; height: 22px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.35) 0 2px, rgba(0,0,0,.18) 2px 5px); }
+  .wo-pack-holo { position: absolute; inset: 0; mix-blend-mode: overlay; opacity: .55; pointer-events: none;
+    background: linear-gradient(125deg, #ff4fd8, #4fd1ff, #fff36b, #5bff9e, #ff4fd8); background-size: 300% 300%; animation: wo-holo 4s linear infinite; }
+  .wo-pack-emblem { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); width: 104px; height: 104px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 50px;
+    background: radial-gradient(circle at 35% 30%, var(--m-light), var(--m-mid) 55%, var(--m-dark));
+    box-shadow: 0 0 0 4px rgba(255,255,255,.55), 0 0 0 7px var(--m-dark), 0 6px 18px rgba(0,0,0,.45), inset 0 2px 8px rgba(255,255,255,.6); }
+  .wo-pack-name { position: absolute; left: 0; right: 0; top: 70%; text-align: center; line-height: 1;
+    font-family: var(--font-display); font-weight: 800; font-size: 25px; letter-spacing: .1em; color: #fff; white-space: nowrap;
+    text-shadow: 0 1px 0 var(--m-dark), 0 2px 0 var(--m-dark), 0 3px 6px rgba(0,0,0,.5); }
+  .wo-pack-name small { display: block; margin-top: 4px; font-size: 13px; letter-spacing: .3em; opacity: .9; }
+  .wo-pack-spark { position: absolute; color: #fff; font-size: 18px; text-shadow: 0 0 8px var(--wo2), 0 0 16px var(--wo2); opacity: 0;
+    animation: wo-twinkle 1.6s ease-in-out infinite; pointer-events: none; }
   .wo-pack-hint { font-size: 15px; font-weight: 700; color: #fff; opacity: 0; animation: wo-in .4s 1s both, wo-blink 1.2s 1.4s ease-in-out infinite; }
   .wo-pack.wo-open { animation: wo-pack-shake .5s ease both; }
-  .wo-pack.wo-open .wo-pack-flap { animation: wo-flap .45s .3s ease-in forwards; }
+  .wo-pack.wo-open .wo-pack-top { animation: wo-flap .45s .3s ease-in forwards; }
   .wo-flash { position: absolute; inset: 0; pointer-events: none; animation: wo-flash .9s ease-out forwards;
     background: radial-gradient(circle, #fff 0%, color-mix(in srgb, var(--wo2) 70%, transparent) 30%, transparent 65%); }
   @keyframes wo-pack-rise { from { transform: translateY(110vh) scale(.8); } to { transform: none; } }
-  @keyframes wo-pack-glow { from { box-shadow: 0 0 26px color-mix(in srgb, var(--wo2) 70%, transparent), inset 0 0 0 2px rgba(255,255,255,.35); }
-    to { box-shadow: 0 0 60px var(--wo2), 0 0 110px color-mix(in srgb, var(--wo1) 80%, transparent), inset 0 0 0 2px rgba(255,255,255,.55); } }
+  @keyframes wo-pack-glow { from { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--wo2) 70%, transparent)); }
+    to { filter: drop-shadow(0 0 26px var(--wo2)) drop-shadow(0 0 50px color-mix(in srgb, var(--wo1) 80%, transparent)); } }
+  @keyframes wo-metal { from { background-position: 0% 0; } to { background-position: 220% 0; } }
+  @keyframes wo-holo { from { background-position: 0% 50%; } to { background-position: 300% 50%; } }
+  @keyframes wo-twinkle { 0%, 100% { opacity: 0; transform: scale(.3) rotate(0); } 50% { opacity: 1; transform: scale(1) rotate(45deg); } }
   @keyframes wo-pack-shake { 0%, 100% { transform: none; } 20% { transform: rotate(-5deg) scale(1.03); } 40% { transform: rotate(5deg) scale(1.06); }
     60% { transform: rotate(-4deg) scale(1.08); } 80% { transform: rotate(3deg) scale(1.12); } }
-  @keyframes wo-flap { to { transform: translateY(-160px) rotate(-28deg); opacity: 0; } }
+  @keyframes wo-flap { to { transform: translateY(-170px) rotate(-26deg); opacity: 0; } }
   @keyframes wo-flash { 0% { opacity: 0; transform: scale(.3); } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(2.4); } }
   @keyframes wo-blink { 50% { opacity: .35; } }
   @keyframes wo-slide { from { transform: translateX(-6px); } to { transform: translateX(6px); } }
@@ -884,7 +901,7 @@
   let startModulePicked = !!urlModule;
   let navOpen = false;
   // Versión de la app que se ve al final del menú (súbela en cada publicación para saber cuál tiene cada celular).
-  const APP_BUILD = "2026-11-20.11";
+  const APP_BUILD = "2026-11-20.12";
   let teamsTab = null;
   let teamView = "alineacion"; // pestaña dentro de Equipos: "alineacion" | "plantilla"
   let market = null;          // jugadores del mercado (market.json)
@@ -4914,6 +4931,12 @@
       sb.rpc("walkout_diag", { p_purchase: purchaseId, p_info: info }).then(() => {}, () => {});
     } catch (e) { /* solo diagnóstico */ }
   }
+  // El sobre (estilos .wo-pack*); el mismo marcado está en walkout/render.html.
+  const WO_PACK_HTML = `<div class="wo-pack"><div class="wo-pack-body"><div class="wo-pack-holo"></div>
+      <div class="wo-pack-emblem">⚽</div><div class="wo-pack-name">TORNEO FIFA<small>FC 27</small></div></div>
+    <div class="wo-pack-top"><div class="wo-pack-holo"></div></div></div>
+    ${[[-30, 20, 0], [190, 60, .5], [-24, 190, .9], [196, 220, .3], [80, -30, 1.1], [150, 290, .7]].map(([x, y, d]) =>
+      `<span class="wo-pack-spark" style="left:${x}px;top:${y}px;animation-delay:${d}s">✦</span>`).join("")}`;
   function walkout(m, teamId) {
     if (!m) return;
     woPreload(m, teamId);
@@ -4927,8 +4950,7 @@
     layer.querySelector(".wo-skip").addEventListener("click", e => { e.stopPropagation(); woFinal(true); });
     // Primero el sobre: sube al centro y espera a que lo toquen; al tocarlo se abre y arranca la revelación.
     woSound("rise");
-    wo.stage.innerHTML = `<div class="wo-pack-wrap"><div class="wo-pack"><div class="wo-pack-flap"></div>
-      <div class="wo-pack-logo">⚽<span>TORNEO FIFA</span></div></div><span class="wo-pack-hint">Toca para abrir</span></div>`;
+    wo.stage.innerHTML = `<div class="wo-pack-wrap">${WO_PACK_HTML}<span class="wo-pack-hint">Toca para abrir</span></div>`;
     const pack = wo.stage.querySelector(".wo-pack");
     pack.addEventListener("click", e => {
       e.stopPropagation();
