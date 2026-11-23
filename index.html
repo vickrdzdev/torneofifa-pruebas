@@ -901,7 +901,7 @@
   let startModulePicked = !!urlModule;
   let navOpen = false;
   // Versión de la app que se ve al final del menú (súbela en cada publicación para saber cuál tiene cada celular).
-  const APP_BUILD = "2026-11-20.12";
+  const APP_BUILD = "2026-11-23.1";
   let teamsTab = null;
   let teamView = "alineacion"; // pestaña dentro de Equipos: "alineacion" | "plantilla"
   let market = null;          // jugadores del mercado (market.json)
@@ -4908,7 +4908,8 @@
   const woImgOr = (url, cls, fb) => url
     ? `<img class="${cls}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false">${fb.replace(">", " hidden>")}`
     : fb;
-  const woSide = x => `<div class="wo-tr-side">${woImgOr(x.logo, "wo-img", `<span class="wo-tr-ph">⚽</span>`)}${x.name ? `<span class="wo-tr-name">${escapeHtml(x.name)}</span>` : ""}</div>`;
+  // Solo el escudo (sin nombre debajo).
+  const woSide = x => `<div class="wo-tr-side">${woImgOr(x.logo, "wo-img", `<span class="wo-tr-ph">⚽</span>`)}</div>`;
   // Descarga por adelantado las imágenes del walkout (al abrir la compra y al arrancar): cada paso dura
   // ~1 s y, si la imagen se pidiera hasta que aparece, con datos móviles no alcanzaría a llegar.
   const woPreloaded = new Map();
