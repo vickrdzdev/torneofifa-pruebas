@@ -17,6 +17,17 @@ const FFMPEG = process.env.FFMPEG || (() => { try { return require("ffmpeg-stati
 const { API, JOB, TOKEN, LOCAL, OUT } = process.env;
 const jobUrl = (extra) => `${API}?job=${encodeURIComponent(JOB)}&token=${encodeURIComponent(TOKEN)}${extra || ""}`;
 
+// Chrome del sistema (CHROME_CHANNEL=chrome en GitHub Actions); si no se puede, se descarga Chromium.
+async function launchBrowser() {
+  if (process.env.CHROME_CHANNEL) {
+    try { return await chromium.launch({ channel: process.env.CHROME_CHANNEL }); } catch (e) {
+      console.log("No se pudo usar Chrome del sistema:", String(e.message || e).split("\n")[0], "→ se descarga Chromium");
+      execFileSync("npx", ["playwright", "install", "--with-deps", "--only-shell", "chromium"], { stdio: "inherit", cwd: __dirname, timeout: 180000 });
+    }
+  }
+  return chromium.launch();
+}
+
 async function main() {
   // 1. Datos de la compra (la base) + estadísticas y foto (market.json del sitio).
   const job = LOCAL ? JSON.parse(fs.readFileSync(LOCAL, "utf8")) : await (async () => {
@@ -46,7 +57,7 @@ async function main() {
 
   // 2. Graba la animación.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "walkout-"));
-  const browser = await chromium.launch(process.env.CHROME_CHANNEL ? { channel: process.env.CHROME_CHANNEL } : {});
+  const browser = await launchBrowser();
   const ctx = await browser.newContext({ viewport: { width: 720, height: 1280 }, recordVideo: { dir, size: { width: 720, height: 1280 } } });
   const page = await ctx.newPage();
   await page.addInitScript((d) => { window.WO = d; }, wo);

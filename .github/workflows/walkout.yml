@@ -25,7 +25,7 @@ permissions:
 jobs:
   video:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 8
     env:
       API: ${{ inputs.api }}
       JOB: ${{ inputs.job }}
@@ -38,14 +38,20 @@ jobs:
             market.json
             img/futbin
           sparse-checkout-cone-mode: false
+      # Usa el Chrome que ya trae el servidor de GitHub (sin descargar navegador ni paquetes del
+      # sistema, que a veces se quedaban colgados); solo baja la librería y el ffmpeg de la grabación.
+      # Cada descarga tiene tiempo límite y hasta 3 intentos.
       - name: Preparar navegador y ffmpeg
         working-directory: walkout
+        timeout-minutes: 3
         run: |
           npm init -y >/dev/null
-          npm i --no-audit --no-fund --loglevel=error playwright@1.63.0 ffmpeg-static@5.2.0
-          npx playwright install --with-deps --only-shell chromium
-          npx playwright install ffmpeg
+          for i in 1 2 3; do timeout 60 npm i --no-audit --no-fund --loglevel=error playwright@1.63.0 ffmpeg-static@5.2.0 && break; echo "reintento $i"; done
+          for i in 1 2 3; do timeout 60 npx playwright install ffmpeg && break; echo "reintento $i"; done
       - name: Grabar y enviar
+        timeout-minutes: 4
+        env:
+          CHROME_CHANNEL: chrome
         run: node walkout/record.js
       - name: Plan B (mensaje con foto)
         if: failure()
